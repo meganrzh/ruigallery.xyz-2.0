@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-serif: "EB Garamond", "Times New Roman", Times, "Noto Serif SC", serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    --font-chinese: "Noto Serif SC", "Songti SC", SimSun, serif;
+    --brand-red: #9E2A2B;
+    --brand-red-dark: #801C1D;
+    --ink-black: #141413;
+    --paper-bg: #FBFBFA;
+    --paper-card: #F4F3EE;
+    --rule-color: #E6E4DD;
+  }
+
+  body {
+    font-family: var(--font-serif);
+    background-color: var(--paper-bg);
+    color: var(--ink-black);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom typography classes */
+  .font-mono-archival {
+    font-family: var(--font-mono);
+  }
+
+  .font-chinese {
+    font-family: var(--font-chinese);
+  }
+
+  .font-serif-body {
+    font-family: var(--font-serif);
+  }
+
+  /* Fine hair-thin borders for clinical archival feel */
+  .border-archival {
+    border-color: #E5E3DB;
+  }
+
+  .border-archival-subtle {
+    border-color: #EFEFEA;
+  }
+}
+
+/* Calligraphic stroke animation helpers */
+@keyframes dash {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Print styling */
+@media print {
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
