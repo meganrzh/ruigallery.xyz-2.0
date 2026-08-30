@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   Collection,
   Study,
@@ -17,6 +17,7 @@ import {
   INITIAL_PROFESSIONAL_ITEMS,
   INITIAL_ABOUT_DATA,
 } from '../data/initialData';
+import { api } from '../services/api';
 
 interface ArchiveContextType {
   collections: Collection[];
@@ -26,6 +27,8 @@ interface ArchiveContextType {
   curatedWorks: CuratedWork[];
   professionalItems: ProfessionalItem[];
   aboutData: AboutData;
+  isLoading: boolean;
+  isPersistent: boolean;
 
   // Retrieval helpers
   getCollection: (idOrSlug: string) => Collection | undefined;
@@ -52,12 +55,12 @@ interface ArchiveContextType {
   updateCuratedWork: (id: string, updates: Partial<CuratedWork>) => void;
   deleteCuratedWork: (id: string) => void;
 
-  addCollection: (col: Omit<Collection, 'id'>) => Collection;
-  updateCollection: (id: string, updates: Partial<Collection>) => void;
+  addCollection: (col: Omit<Collection, 'id'>) => Promise<Collection>;
+  updateCollection: (id: string, updates: Partial<Collection>) => Promise<void>;
   deleteCollection: (id: string) => void;
 
-  addStudy: (std: Omit<Study, 'id'>) => Study;
-  updateStudy: (id: string, updates: Partial<Study>) => void;
+  addStudy: (std: Omit<Study, 'id'>) => Promise<Study>;
+  updateStudy: (id: string, updates: Partial<Study>) => Promise<void>;
   deleteStudy: (id: string) => void;
 
   addThread: (thread: Omit<Thread, 'id'>) => Thread;
@@ -65,6 +68,7 @@ interface ArchiveContextType {
 
   updateAboutData: (updates: Partial<AboutData>) => void;
   resetToDefaultData: () => void;
+  refetchFromPersistentStore: () => Promise<void>;
 }
 
 const STORAGE_KEYS = {
@@ -80,6 +84,9 @@ const STORAGE_KEYS = {
 const ArchiveContext = createContext<ArchiveContextType | undefined>(undefined);
 
 export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPersistent, setIsPersistent] = useState(false);
+
   const [collections, setCollections] = useState<Collection[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.COLLECTIONS);
@@ -143,7 +150,30 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   });
 
-  // Sync to localStorage
+  // Initial persistent fetch from D1 / API
+  const refetchFromPersistentStore = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const persistent = await api.getArchive();
+      if (persistent && persistent.collections.length > 0) {
+        setCollections(persistent.collections);
+        if (persistent.studies.length > 0) {
+          setStudies(persistent.studies);
+        }
+        setIsPersistent(true);
+      }
+    } catch (err) {
+      console.warn('[ArchiveContext] Note: Operating in local fallback mode', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refetchFromPersistentStore();
+  }, [refetchFromPersistentStore]);
+
+  // Sync to localStorage as temporary fallback during migration
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.COLLECTIONS, JSON.stringify(collections));
   }, [collections]);
@@ -292,34 +322,58 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setCuratedWorks((prev) => prev.filter((w) => w.id !== id));
   };
 
-  const addCollection = (colData: Omit<Collection, 'id'>): Collection => {
+  const addCollection = async (colData: Omit<Collection, 'id'>): Promise<Collection> => {
+    const tempId = `col-${Date.now()}`;
     const newCol: Collection = {
       ...colData,
-      id: `col-${Date.now()}`,
+      id: tempId,
     };
-    setCollections((prev) => [...prev, newCol]);
-    return newCol;
+    try {
+      const persisted = await api.createCollection(newCol);
+      setCollections((prev) => [...prev, persisted]);
+      return persisted;
+    } catch {
+      setCollections((prev) => [...prev, newCol]);
+      return newCol;
+    }
   };
 
-  const updateCollection = (id: string, updates: Partial<Collection>) => {
+  const updateCollection = async (id: string, updates: Partial<Collection>): Promise<void> => {
     setCollections((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+    try {
+      await api.updateCollection(id, updates);
+    } catch (err) {
+      console.warn('[ArchiveContext] Update saved to local state/fallback only', err);
+    }
   };
 
   const deleteCollection = (id: string) => {
     setCollections((prev) => prev.filter((c) => c.id !== id));
   };
 
-  const addStudy = (stdData: Omit<Study, 'id'>): Study => {
+  const addStudy = async (stdData: Omit<Study, 'id'>): Promise<Study> => {
+    const tempId = `std-${Date.now()}`;
     const newStd: Study = {
       ...stdData,
-      id: `std-${Date.now()}`,
+      id: tempId,
     };
-    setStudies((prev) => [...prev, newStd]);
-    return newStd;
+    try {
+      const persisted = await api.createStudy(newStd);
+      setStudies((prev) => [...prev, persisted]);
+      return persisted;
+    } catch {
+      setStudies((prev) => [...prev, newStd]);
+      return newStd;
+    }
   };
 
-  const updateStudy = (id: string, updates: Partial<Study>) => {
+  const updateStudy = async (id: string, updates: Partial<Study>): Promise<void> => {
     setStudies((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+    try {
+      await api.updateStudy(id, updates);
+    } catch (err) {
+      console.warn('[ArchiveContext] Update saved to local state/fallback only', err);
+    }
   };
 
   const deleteStudy = (id: string) => {
@@ -364,6 +418,8 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         curatedWorks,
         professionalItems,
         aboutData,
+        isLoading,
+        isPersistent,
         getCollection,
         getStudy,
         getEntry,
@@ -394,6 +450,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteThread,
         updateAboutData,
         resetToDefaultData,
+        refetchFromPersistentStore,
       }}
     >
       {children}

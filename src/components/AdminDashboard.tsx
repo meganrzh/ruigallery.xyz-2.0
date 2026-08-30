@@ -49,7 +49,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     updateCuratedWork,
     deleteCuratedWork,
     addCollection,
+    updateCollection,
     addStudy,
+    updateStudy,
     addThread,
     deleteThread,
     resetToDefaultData,
@@ -93,6 +95,80 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   // New Thread State
   const [newThreadName, setNewThreadName] = useState('');
   const [newThreadDesc, setNewThreadDesc] = useState('');
+
+  // Editing existing Collection State
+  const [editingColId, setEditingColId] = useState<string | null>(null);
+  const [editColTitle, setEditColTitle] = useState('');
+  const [editColSubtitle, setEditColSubtitle] = useState('');
+  const [editColDesc, setEditColDesc] = useState('');
+  const [editColPeriod, setEditColPeriod] = useState('');
+  const [isSavingCol, setIsSavingCol] = useState(false);
+
+  // Editing existing Study State
+  const [editingStudyId, setEditingStudyId] = useState<string | null>(null);
+  const [editStudyTitle, setEditStudyTitle] = useState('');
+  const [editStudySubtitle, setEditStudySubtitle] = useState('');
+  const [editStudyDesc, setEditStudyDesc] = useState('');
+  const [editStudyColId, setEditStudyColId] = useState('');
+  const [isSavingStudy, setIsSavingStudy] = useState(false);
+
+  const startEditCollection = (col: (typeof collections)[0]) => {
+    setEditingColId(col.id);
+    setEditColTitle(col.title);
+    setEditColSubtitle(col.subtitle || '');
+    setEditColDesc(col.description);
+    setEditColPeriod(col.period);
+  };
+
+  const handleSaveCollectionEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingColId || !editColTitle) return;
+    setIsSavingCol(true);
+    try {
+      await updateCollection(editingColId, {
+        title: editColTitle,
+        subtitle: editColSubtitle,
+        description: editColDesc,
+        period: editColPeriod,
+      });
+      setSuccessMessage(`Collection "${editColTitle}" updated and persisted!`);
+      setEditingColId(null);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      alert(`Failed to save collection: ${err?.message || 'Error'}`);
+    } finally {
+      setIsSavingCol(false);
+    }
+  };
+
+  const startEditStudy = (std: (typeof studies)[0]) => {
+    setEditingStudyId(std.id);
+    setEditStudyTitle(std.title);
+    setEditStudySubtitle(std.subtitle || '');
+    setEditStudyDesc(std.description);
+    setEditStudyColId(std.collectionId);
+  };
+
+  const handleSaveStudyEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStudyId || !editStudyTitle) return;
+    setIsSavingStudy(true);
+    try {
+      await updateStudy(editingStudyId, {
+        title: editStudyTitle,
+        subtitle: editStudySubtitle,
+        description: editStudyDesc,
+        collectionId: editStudyColId,
+      });
+      setSuccessMessage(`Study "${editStudyTitle}" updated and persisted!`);
+      setEditingStudyId(null);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      alert(`Failed to save study: ${err?.message || 'Error'}`);
+    } finally {
+      setIsSavingStudy(false);
+    }
+  };
 
   // Helper for available studies based on collection
   const availableStudies = studies.filter((s) => s.collectionId === entryCollectionId);
@@ -899,112 +975,330 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
 
         {/* Tab 4: Collections & Studies */}
         {activeTab === 'collections' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Create Collection */}
-            <form onSubmit={handleCreateCollection} className="p-6 bg-[#F4F3EE] border border-[#E5E3DB] space-y-4">
-              <h3 className="font-serif text-lg text-[#141413] font-medium pb-2 border-b border-[#E5E3DB]">
-                Add New Collection
-              </h3>
-              <div className="space-y-3 text-xs font-mono-archival">
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Title *</label>
-                  <input
-                    type="text"
-                    required
-                    value={newColTitle}
-                    onChange={(e) => setNewColTitle(e.target.value)}
-                    placeholder="e.g. Kyoto Cartography Studies"
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Subtitle</label>
-                  <input
-                    type="text"
-                    value={newColSubtitle}
-                    onChange={(e) => setNewColSubtitle(e.target.value)}
-                    placeholder="Brief conceptual subtitle"
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
-                  <input
-                    type="text"
-                    value={newColPeriod}
-                    onChange={(e) => setNewColPeriod(e.target.value)}
-                    placeholder="2026 — Present"
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
-                  <textarea
-                    rows={3}
-                    value={newColDesc}
-                    onChange={(e) => setNewColDesc(e.target.value)}
-                    placeholder="Description of the inquiry..."
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full py-2 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] uppercase tracking-wider font-semibold"
-                >
-                  Create Collection
-                </button>
-              </div>
-            </form>
-
-            {/* Create Study */}
-            <form onSubmit={handleCreateStudy} className="p-6 bg-[#F4F3EE] border border-[#E5E3DB] space-y-4">
-              <h3 className="font-serif text-lg text-[#141413] font-medium pb-2 border-b border-[#E5E3DB]">
-                Add Study to Collection
-              </h3>
-              <div className="space-y-3 text-xs font-mono-archival">
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Parent Collection *</label>
-                  <select
-                    value={newStdColId}
-                    onChange={(e) => setNewStdColId(e.target.value)}
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Create Collection */}
+              <form onSubmit={handleCreateCollection} className="p-6 bg-[#F4F3EE] border border-[#E5E3DB] space-y-4">
+                <h3 className="font-serif text-lg text-[#141413] font-medium pb-2 border-b border-[#E5E3DB]">
+                  Add New Collection
+                </h3>
+                <div className="space-y-3 text-xs font-mono-archival">
+                  <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Title *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newColTitle}
+                      onChange={(e) => setNewColTitle(e.target.value)}
+                      placeholder="e.g. Kyoto Cartography Studies"
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Subtitle</label>
+                    <input
+                      type="text"
+                      value={newColSubtitle}
+                      onChange={(e) => setNewColSubtitle(e.target.value)}
+                      placeholder="Brief conceptual subtitle"
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
+                    <input
+                      type="text"
+                      value={newColPeriod}
+                      onChange={(e) => setNewColPeriod(e.target.value)}
+                      placeholder="2026 — Present"
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
+                    <textarea
+                      rows={3}
+                      value={newColDesc}
+                      onChange={(e) => setNewColDesc(e.target.value)}
+                      placeholder="Description of the inquiry..."
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] uppercase tracking-wider font-semibold"
                   >
-                    {collections.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title}
-                      </option>
-                    ))}
-                  </select>
+                    Create Collection
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Study Title *</label>
-                  <input
-                    type="text"
-                    required
-                    value={newStdTitle}
-                    onChange={(e) => setNewStdTitle(e.target.value)}
-                    placeholder="e.g. Vernacular Roof Typologies"
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                  />
+              </form>
+
+              {/* Create Study */}
+              <form onSubmit={handleCreateStudy} className="p-6 bg-[#F4F3EE] border border-[#E5E3DB] space-y-4">
+                <h3 className="font-serif text-lg text-[#141413] font-medium pb-2 border-b border-[#E5E3DB]">
+                  Add Study to Collection
+                </h3>
+                <div className="space-y-3 text-xs font-mono-archival">
+                  <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Parent Collection *</label>
+                    <select
+                      value={newStdColId}
+                      onChange={(e) => setNewStdColId(e.target.value)}
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                    >
+                      {collections.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Study Title *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newStdTitle}
+                      onChange={(e) => setNewStdTitle(e.target.value)}
+                      placeholder="e.g. Vernacular Roof Typologies"
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Study Description</label>
+                    <textarea
+                      rows={3}
+                      value={newStdDesc}
+                      onChange={(e) => setNewStdDesc(e.target.value)}
+                      placeholder="Research focus..."
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] uppercase tracking-wider font-semibold"
+                  >
+                    Create Study
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Study Description</label>
-                  <textarea
-                    rows={3}
-                    value={newStdDesc}
-                    onChange={(e) => setNewStdDesc(e.target.value)}
-                    placeholder="Research focus..."
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full py-2 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] uppercase tracking-wider font-semibold"
-                >
-                  Create Study
-                </button>
+              </form>
+            </div>
+
+            {/* Existing Collections & Studies Interactive Management */}
+            <div className="space-y-6">
+              <h3 className="font-serif text-xl text-[#141413] font-medium pb-2 border-b border-[#E5E3DB]">
+                Manage Existing Hierarchy & Studies
+              </h3>
+
+              <div className="space-y-6">
+                {collections.map((collection) => {
+                  const collectionStudies = studies.filter((s) => s.collectionId === collection.id);
+                  const isEditingCol = editingColId === collection.id;
+
+                  return (
+                    <div key={collection.id} className="border border-[#E5E3DB] bg-[#FBFBFA] p-6 space-y-4">
+                      {/* Collection Header */}
+                      {isEditingCol ? (
+                        <form onSubmit={handleSaveCollectionEdit} className="p-4 bg-[#F4F3EE] border border-[#E5E3DB] space-y-3 text-xs font-mono-archival">
+                          <span className="font-semibold text-xs text-[#9E2A2B]">EDIT COLLECTION: {collection.id}</span>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Title</label>
+                              <input
+                                type="text"
+                                required
+                                value={editColTitle}
+                                onChange={(e) => setEditColTitle(e.target.value)}
+                                className="w-full p-2 bg-white border border-[#E5E3DB]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Subtitle</label>
+                              <input
+                                type="text"
+                                value={editColSubtitle}
+                                onChange={(e) => setEditColSubtitle(e.target.value)}
+                                className="w-full p-2 bg-white border border-[#E5E3DB]"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
+                            <input
+                              type="text"
+                              value={editColPeriod}
+                              onChange={(e) => setEditColPeriod(e.target.value)}
+                              className="w-full p-2 bg-white border border-[#E5E3DB]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
+                            <textarea
+                              rows={2}
+                              value={editColDesc}
+                              onChange={(e) => setEditColDesc(e.target.value)}
+                              className="w-full p-2 bg-white border border-[#E5E3DB]"
+                            />
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setEditingColId(null)}
+                              className="px-3 py-1.5 border border-[#E5E3DB] bg-white text-[#6E6E66]"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={isSavingCol}
+                              className="px-4 py-1.5 bg-[#9E2A2B] text-white font-semibold uppercase tracking-wider"
+                            >
+                              {isSavingCol ? 'Saving...' : 'Save Collection'}
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#E5E3DB]">
+                          <div>
+                            <div className="flex items-center gap-2 text-xs font-mono-archival text-[#8C8C82]">
+                              <span className="font-semibold text-[#141413]">{collection.title}</span>
+                              <span>•</span>
+                              <span>{collection.period}</span>
+                              <span>•</span>
+                              <span>{collectionStudies.length} Studies</span>
+                            </div>
+                            {collection.subtitle && (
+                              <p className="font-serif text-sm text-[#6E6E66] italic mt-0.5">{collection.subtitle}</p>
+                            )}
+                            <p className="font-serif text-xs text-[#6E6E66] mt-1 max-w-2xl">{collection.description}</p>
+                          </div>
+                          <button
+                            onClick={() => startEditCollection(collection)}
+                            className="px-3 py-1 text-xs font-mono-archival border border-[#E5E3DB] bg-white hover:border-[#141413] shrink-0"
+                          >
+                            Edit Collection
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Studies inside this Collection */}
+                      <div className="space-y-3 pt-2">
+                        <span className="text-[11px] font-mono-archival uppercase tracking-wider text-[#8C8C82]">
+                          Studies in this Collection ({collectionStudies.length})
+                        </span>
+
+                        <div className="divide-y divide-[#E5E3DB] border border-[#E5E3DB] bg-white">
+                          {collectionStudies.length === 0 ? (
+                            <div className="p-3 text-xs font-serif text-[#8C8C82] italic">No studies in this collection yet.</div>
+                          ) : (
+                            collectionStudies.map((study) => {
+                              const isEditingStudy = editingStudyId === study.id;
+                              const studyEntries = entries.filter((e) => e.studyId === study.id);
+
+                              return isEditingStudy ? (
+                                <form key={study.id} onSubmit={handleSaveStudyEdit} className="p-4 bg-[#F4F3EE] space-y-3 text-xs font-mono-archival">
+                                  <span className="font-semibold text-xs text-[#9E2A2B]">EDIT STUDY: {study.id}</span>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Study Title</label>
+                                      <input
+                                        type="text"
+                                        required
+                                        value={editStudyTitle}
+                                        onChange={(e) => setEditStudyTitle(e.target.value)}
+                                        className="w-full p-2 bg-white border border-[#E5E3DB]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Subtitle</label>
+                                      <input
+                                        type="text"
+                                        value={editStudySubtitle}
+                                        onChange={(e) => setEditStudySubtitle(e.target.value)}
+                                        className="w-full p-2 bg-white border border-[#E5E3DB]"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Parent Collection</label>
+                                    <select
+                                      value={editStudyColId}
+                                      onChange={(e) => setEditStudyColId(e.target.value)}
+                                      className="w-full p-2 bg-white border border-[#E5E3DB]"
+                                    >
+                                      {collections.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                          {c.title}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
+                                    <textarea
+                                      rows={2}
+                                      value={editStudyDesc}
+                                      onChange={(e) => setEditStudyDesc(e.target.value)}
+                                      className="w-full p-2 bg-white border border-[#E5E3DB]"
+                                    />
+                                  </div>
+                                  <div className="flex gap-2 justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingStudyId(null)}
+                                      className="px-3 py-1.5 border border-[#E5E3DB] bg-white text-[#6E6E66]"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      disabled={isSavingStudy}
+                                      className="px-4 py-1.5 bg-[#9E2A2B] text-white font-semibold uppercase tracking-wider"
+                                    >
+                                      {isSavingStudy ? 'Saving...' : 'Save Study'}
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <div key={study.id} className="p-3.5 flex items-center justify-between gap-4 hover:bg-[#FAF9F5]">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-2 text-xs font-mono-archival">
+                                      <span className="font-medium text-[#141413]">{study.title}</span>
+                                      <span className="text-[#8C8C82]">•</span>
+                                      <span className="text-[#8C8C82]">{studyEntries.length} entries</span>
+                                    </div>
+                                    {study.subtitle && (
+                                      <p className="font-serif text-xs text-[#6E6E66] italic">{study.subtitle}</p>
+                                    )}
+                                    <p className="font-serif text-xs text-[#6E6E66] line-clamp-1">{study.description}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0 text-xs font-mono-archival">
+                                    <button
+                                      type="button"
+                                      onClick={() => onNavigate({ page: 'study', slug: study.slug })}
+                                      className="px-2.5 py-1 border border-[#E5E3DB] bg-white hover:border-[#141413] text-[#6E6E66]"
+                                    >
+                                      View
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditStudy(study)}
+                                      className="px-2.5 py-1 border border-[#E5E3DB] bg-white hover:border-[#141413] text-[#141413]"
+                                    >
+                                      Edit
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </form>
+            </div>
           </div>
         )}
 
