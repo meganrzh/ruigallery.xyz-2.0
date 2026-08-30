@@ -168,7 +168,7 @@ export const RuiHero: React.FC<RuiHeroProps> = () => {
             <div className="flex items-center space-x-3">
               <span className="text-[#9E2A2B] font-medium">[ ARCHIVE SYSTEM ]</span>
               <span>VOL. 01 / 2026</span>
-              <span className="hidden sm:inline-block">SAN FRANCISCO &amp; LOS ANGELES</span>
+              <span className="hidden sm:inline-block">LOS ANGELES</span>
             </div>
             <div className="flex items-center space-x-4">
               <span>LOC: 37.7749° N, 122.4194° W</span>
@@ -251,7 +251,7 @@ export const RuiHero: React.FC<RuiHeroProps> = () => {
               className="mt-4 md:mt-6 text-[#4A4A44] max-w-2xl leading-relaxed text-[20px]"
               style={{ fontFamily: '"Times New Roman", Times, serif', fontSize: '20px' }}
             >
-              A central digital environment uniting curated creative works, an exploratory research laboratory, and an integrated professional ecosystem.
+              For the rebels who dream.
             </p>
           </div>
         </div>

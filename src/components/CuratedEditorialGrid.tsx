@@ -29,7 +29,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
               Curated Works / 01
             </span>
             <h2 className="font-serif text-3xl md:text-4xl text-[#141413] mt-1">
-              Selected Creative Work
+              Essays
             </h2>
           </div>
           <p className="font-serif text-sm text-[#6E6E66] max-w-md mt-2 md:mt-0 italic">
