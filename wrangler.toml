@@ -1,4 +1,4 @@
-name = "ruigallery-xyz"
+name = "ruigallery-xyz-2-0"
 main = "./src/worker.ts"
 compatibility_date = "2026-08-30"
 compatibility_flags = ["nodejs_compat"]
@@ -11,5 +11,5 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "ruigallery-db"
-database_id = "local-ruigallery-db"
+database_id = "a0ea467f-3f8c-4ce2-b106-3a503cb3928d"
 migrations_dir = "migrations"
