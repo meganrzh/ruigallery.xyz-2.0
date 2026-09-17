@@ -62,6 +62,45 @@ export interface StudyRecord {
   updated_at: string;
 }
 
+export interface ThreadRecord {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EntryRecord {
+  id: string;
+  slug: string;
+  entry_number: string;
+  study_id: string;
+  title: string;
+  rui_revision: string;
+  summary: string | null;
+  location: string | null;
+  archival_date: string;
+  published_date: string | null;
+  last_modified_date: string | null;
+  blocks: string;
+  visibility: string;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EntryThreadRecord {
+  entry_id: string;
+  thread_id: string;
+}
+
+export interface EntryRelatedStudyRecord {
+  entry_id: string;
+  study_id: string;
+}
+
 function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -90,6 +129,42 @@ function handleCorsOptions(): Response {
   });
 }
 
+function hydrateEntry(
+  entry: EntryRecord,
+  studyCollectionMap: Map<string, string>,
+  entryThreadsMap: Map<string, string[]>,
+  entryRelatedStudiesMap: Map<string, string[]>
+) {
+  let blocks: unknown[] = [];
+  try {
+    blocks = typeof entry.blocks === 'string' ? JSON.parse(entry.blocks) : (entry.blocks || []);
+  } catch {
+    blocks = [];
+  }
+
+  return {
+    id: entry.id,
+    slug: entry.slug,
+    entryNumber: entry.entry_number,
+    studyId: entry.study_id,
+    collectionId: studyCollectionMap.get(entry.study_id) || '',
+    title: entry.title,
+    ruiRevision: entry.rui_revision,
+    summary: entry.summary || '',
+    location: entry.location || '',
+    createdDate: entry.archival_date,
+    publishedDate: entry.published_date || entry.archival_date,
+    lastModifiedDate: entry.last_modified_date || entry.archival_date,
+    blocks,
+    threadIds: entryThreadsMap.get(entry.id) || [],
+    relatedStudyIds: entryRelatedStudiesMap.get(entry.id) || [],
+    visibility: (entry.visibility || 'published') as 'published' | 'draft' | 'hidden',
+    order: entry.order_index,
+    createdAt: entry.created_at,
+    updatedAt: entry.updated_at,
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -102,18 +177,64 @@ export default {
     }
 
     try {
-      // 1. GET /api/archive
+      // 1. GET /api/archive (Aggregate for initial hydration)
       if (pathname === '/api/archive' && method === 'GET') {
-        const [collectionsResult, studiesResult] = await Promise.all([
+        const [
+          collectionsResult,
+          studiesResult,
+          threadsResult,
+          entriesResult,
+          entryThreadsResult,
+          entryRelatedStudiesResult,
+        ] = await Promise.all([
           env.DB.prepare('SELECT * FROM collections ORDER BY order_index ASC, created_at ASC').all<CollectionRecord>(),
           env.DB.prepare('SELECT * FROM studies ORDER BY order_index ASC, created_at ASC').all<StudyRecord>(),
+          env.DB.prepare('SELECT * FROM threads ORDER BY order_index ASC, created_at ASC').all<ThreadRecord>(),
+          env.DB.prepare('SELECT * FROM entries ORDER BY order_index ASC, archival_date DESC').all<EntryRecord>(),
+          env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
+          env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
         ]);
+
+        const studyCollectionMap = new Map<string, string>();
+        for (const s of studiesResult.results || []) {
+          studyCollectionMap.set(s.id, s.collection_id);
+        }
+
+        const entryThreadsMap = new Map<string, string[]>();
+        for (const et of entryThreadsResult.results || []) {
+          const list = entryThreadsMap.get(et.entry_id) || [];
+          list.push(et.thread_id);
+          entryThreadsMap.set(et.entry_id, list);
+        }
+
+        const entryRelatedStudiesMap = new Map<string, string[]>();
+        for (const ers of entryRelatedStudiesResult.results || []) {
+          const list = entryRelatedStudiesMap.get(ers.entry_id) || [];
+          list.push(ers.study_id);
+          entryRelatedStudiesMap.set(ers.entry_id, list);
+        }
+
+        const hydratedEntries = (entriesResult.results || []).map((e) =>
+          hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap)
+        );
+
+        const hydratedThreads = (threadsResult.results || []).map((t) => ({
+          id: t.id,
+          slug: t.slug,
+          name: t.name,
+          description: t.description || undefined,
+          order: t.order_index,
+          createdAt: t.created_at,
+          updatedAt: t.updated_at,
+        }));
 
         return jsonResponse({
           success: true,
           data: {
             collections: collectionsResult.results || [],
             studies: studiesResult.results || [],
+            threads: hydratedThreads,
+            entries: hydratedEntries,
           },
         });
       }
@@ -240,7 +361,6 @@ export default {
         }
 
         if (method === 'DELETE') {
-          // Check if studies reference this collection
           const countCheck = await env.DB.prepare(
             'SELECT COUNT(*) as count FROM studies WHERE collection_id = ?'
           ).bind(id).first<{ count: number }>();
@@ -295,7 +415,6 @@ export default {
             return errorResponse('Valid collection_id is required', 400);
           }
 
-          // Verify collection exists
           const collectionExists = await env.DB.prepare(
             'SELECT id FROM collections WHERE id = ?'
           ).bind(collection_id).first<{ id: string }>();
@@ -413,6 +532,18 @@ export default {
         }
 
         if (method === 'DELETE') {
+          // Check if entries reference this study
+          const entryCountCheck = await env.DB.prepare(
+            'SELECT COUNT(*) as count FROM entries WHERE study_id = ?'
+          ).bind(id).first<{ count: number }>();
+
+          if (entryCountCheck && entryCountCheck.count > 0) {
+            return errorResponse(
+              `Cannot delete study: ${entryCountCheck.count} entry/entries belong to this study. Delete them first.`,
+              409
+            );
+          }
+
           const result = await env.DB.prepare(
             'DELETE FROM studies WHERE id = ?'
           ).bind(id).run();
@@ -429,6 +560,572 @@ export default {
         }
       }
 
+      // 6. /api/threads
+      if (pathname === '/api/threads') {
+        if (method === 'GET') {
+          const { results } = await env.DB.prepare(
+            'SELECT * FROM threads ORDER BY order_index ASC, created_at ASC'
+          ).all<ThreadRecord>();
+
+          return jsonResponse({
+            success: true,
+            data: (results || []).map((t) => ({
+              id: t.id,
+              slug: t.slug,
+              name: t.name,
+              description: t.description || undefined,
+              order: t.order_index,
+              createdAt: t.created_at,
+              updatedAt: t.updated_at,
+            })),
+          });
+        }
+
+        if (method === 'POST') {
+          const body = (await request.json()) as {
+            id?: string;
+            slug?: string;
+            name?: string;
+            description?: string;
+            order?: number;
+          };
+
+          const name = body.name?.trim();
+          if (!name) {
+            return errorResponse('Thread name is required', 400);
+          }
+
+          const id = body.id || `thread-${Date.now()}`;
+          const slug = body.slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || id;
+          const description = body.description?.trim() || null;
+          const order_index = typeof body.order === 'number' ? body.order : 0;
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `INSERT INTO threads (id, slug, name, description, order_index, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+          ).bind(id, slug, name, description, order_index, now, now).run();
+
+          const created = await env.DB.prepare(
+            'SELECT * FROM threads WHERE id = ?'
+          ).bind(id).first<ThreadRecord>();
+
+          return jsonResponse(
+            {
+              success: true,
+              data: created
+                ? {
+                    id: created.id,
+                    slug: created.slug,
+                    name: created.name,
+                    description: created.description || undefined,
+                    order: created.order_index,
+                    createdAt: created.created_at,
+                    updatedAt: created.updated_at,
+                  }
+                : null,
+            },
+            201
+          );
+        }
+      }
+
+      // 7. /api/threads/:id
+      const threadMatch = pathname.match(/^\/api\/threads\/([^/]+)$/);
+      if (threadMatch) {
+        const id = decodeURIComponent(threadMatch[1]);
+
+        if (method === 'GET') {
+          const thread = await env.DB.prepare(
+            'SELECT * FROM threads WHERE id = ? OR slug = ?'
+          ).bind(id, id).first<ThreadRecord>();
+
+          if (!thread) {
+            return errorResponse('Thread not found', 404);
+          }
+
+          return jsonResponse({
+            success: true,
+            data: {
+              id: thread.id,
+              slug: thread.slug,
+              name: thread.name,
+              description: thread.description || undefined,
+              order: thread.order_index,
+              createdAt: thread.created_at,
+              updatedAt: thread.updated_at,
+            },
+          });
+        }
+
+        if (method === 'PUT') {
+          const body = (await request.json()) as {
+            name?: string;
+            description?: string;
+            order?: number;
+          };
+
+          const name = body.name?.trim();
+          if (!name) {
+            return errorResponse('Thread name is required', 400);
+          }
+
+          const now = new Date().toISOString();
+          const result = await env.DB.prepare(
+            `UPDATE threads
+             SET name = ?,
+                 description = COALESCE(?, description),
+                 order_index = COALESCE(?, order_index),
+                 updated_at = ?
+             WHERE id = ?`
+          ).bind(
+            name,
+            body.description ?? null,
+            typeof body.order === 'number' ? body.order : null,
+            now,
+            id
+          ).run();
+
+          if (result.meta?.changes === 0) {
+            return errorResponse('Thread not found', 404);
+          }
+
+          const updated = await env.DB.prepare(
+            'SELECT * FROM threads WHERE id = ?'
+          ).bind(id).first<ThreadRecord>();
+
+          return jsonResponse({
+            success: true,
+            data: updated
+              ? {
+                  id: updated.id,
+                  slug: updated.slug,
+                  name: updated.name,
+                  description: updated.description || undefined,
+                  order: updated.order_index,
+                  createdAt: updated.created_at,
+                  updatedAt: updated.updated_at,
+                }
+              : null,
+          });
+        }
+
+        if (method === 'DELETE') {
+          // Explicitly delete cascade associations
+          await env.DB.prepare('DELETE FROM entry_threads WHERE thread_id = ?').bind(id).run();
+          const result = await env.DB.prepare('DELETE FROM threads WHERE id = ?').bind(id).run();
+
+          if (result.meta?.changes === 0) {
+            return errorResponse('Thread not found', 404);
+          }
+
+          return jsonResponse({
+            success: true,
+            message: 'Thread deleted successfully',
+            id,
+          });
+        }
+      }
+
+      // 8. /api/entries
+      if (pathname === '/api/entries') {
+        if (method === 'GET') {
+          const studyFilter = url.searchParams.get('studyId');
+          const collectionFilter = url.searchParams.get('collectionId');
+          const threadFilter = url.searchParams.get('threadId');
+          const visibilityFilter = url.searchParams.get('visibility');
+
+          const [entriesResult, studiesResult, entryThreadsResult, entryRelatedStudiesResult] =
+            await Promise.all([
+              env.DB.prepare('SELECT * FROM entries ORDER BY order_index ASC, archival_date DESC').all<EntryRecord>(),
+              env.DB.prepare('SELECT id, collection_id FROM studies').all<{ id: string; collection_id: string }>(),
+              env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
+              env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
+            ]);
+
+          const studyCollectionMap = new Map<string, string>();
+          for (const s of studiesResult.results || []) {
+            studyCollectionMap.set(s.id, s.collection_id);
+          }
+
+          const entryThreadsMap = new Map<string, string[]>();
+          for (const et of entryThreadsResult.results || []) {
+            const list = entryThreadsMap.get(et.entry_id) || [];
+            list.push(et.thread_id);
+            entryThreadsMap.set(et.entry_id, list);
+          }
+
+          const entryRelatedStudiesMap = new Map<string, string[]>();
+          for (const ers of entryRelatedStudiesResult.results || []) {
+            const list = entryRelatedStudiesMap.get(ers.entry_id) || [];
+            list.push(ers.study_id);
+            entryRelatedStudiesMap.set(ers.entry_id, list);
+          }
+
+          let list = (entriesResult.results || []).map((e) =>
+            hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap)
+          );
+
+          if (studyFilter) {
+            list = list.filter((e) => e.studyId === studyFilter);
+          }
+          if (collectionFilter) {
+            list = list.filter((e) => e.collectionId === collectionFilter);
+          }
+          if (threadFilter) {
+            list = list.filter((e) => e.threadIds.includes(threadFilter));
+          }
+          if (visibilityFilter) {
+            list = list.filter((e) => e.visibility === visibilityFilter);
+          }
+
+          return jsonResponse({
+            success: true,
+            data: list,
+          });
+        }
+
+        if (method === 'POST') {
+          const body = (await request.json()) as {
+            id?: string;
+            slug?: string;
+            entryNumber?: string;
+            studyId?: string;
+            title?: string;
+            ruiRevision?: string;
+            summary?: string;
+            location?: string;
+            createdDate?: string;
+            publishedDate?: string;
+            lastModifiedDate?: string;
+            blocks?: unknown[];
+            threadIds?: string[];
+            relatedStudyIds?: string[];
+            visibility?: string;
+            order?: number;
+          };
+
+          const title = body.title?.trim();
+          const studyId = body.studyId?.trim();
+
+          if (!title) {
+            return errorResponse('Entry title is required', 400);
+          }
+          if (!studyId) {
+            return errorResponse('Valid studyId is required', 400);
+          }
+
+          // Verify study exists and retrieve its collection_id
+          const study = await env.DB.prepare(
+            'SELECT id, collection_id FROM studies WHERE id = ?'
+          ).bind(studyId).first<{ id: string; collection_id: string }>();
+
+          if (!study) {
+            return errorResponse(`Referenced study '${studyId}' does not exist`, 400);
+          }
+
+          const id = body.id || `entry-${Date.now()}`;
+          const entryNumber = body.entryNumber || '001';
+          const slug =
+            body.slug ||
+            `entry-${entryNumber}-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}` ||
+            id;
+          const ruiRevision = body.ruiRevision || 'REV 00';
+          const summary = body.summary || '';
+          const location = body.location || '';
+          const now = new Date().toISOString();
+          const archivalDate = body.createdDate || now.slice(0, 10).replace(/-/g, '.');
+          const publishedDate = body.publishedDate || archivalDate;
+          const lastModifiedDate = body.lastModifiedDate || archivalDate;
+          const blocksJson = JSON.stringify(body.blocks || []);
+          const visibility = body.visibility || 'published';
+          const order_index = typeof body.order === 'number' ? body.order : 0;
+
+          const batchStatements: D1PreparedStatement[] = [
+            env.DB.prepare(
+              `INSERT INTO entries (id, slug, entry_number, study_id, title, rui_revision, summary, location, archival_date, published_date, last_modified_date, blocks, visibility, order_index, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+              id,
+              slug,
+              entryNumber,
+              studyId,
+              title,
+              ruiRevision,
+              summary,
+              location,
+              archivalDate,
+              publishedDate,
+              lastModifiedDate,
+              blocksJson,
+              visibility,
+              order_index,
+              now,
+              now
+            ),
+          ];
+
+          if (Array.isArray(body.threadIds)) {
+            for (const tId of body.threadIds) {
+              if (tId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO entry_threads (entry_id, thread_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(id, tId, now)
+                );
+              }
+            }
+          }
+
+          if (Array.isArray(body.relatedStudyIds)) {
+            for (const sId of body.relatedStudyIds) {
+              if (sId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO entry_related_studies (entry_id, study_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(id, sId, now)
+                );
+              }
+            }
+          }
+
+          await env.DB.batch(batchStatements);
+
+          const studyCollectionMap = new Map<string, string>([[study.id, study.collection_id]]);
+          const entryThreadsMap = new Map<string, string[]>([[id, body.threadIds || []]]);
+          const entryRelatedStudiesMap = new Map<string, string[]>([[id, body.relatedStudyIds || []]]);
+
+          const createdEntry = await env.DB.prepare(
+            'SELECT * FROM entries WHERE id = ?'
+          ).bind(id).first<EntryRecord>();
+
+          if (!createdEntry) {
+            return errorResponse('Failed to retrieve created entry', 500);
+          }
+
+          return jsonResponse(
+            {
+              success: true,
+              data: hydrateEntry(createdEntry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap),
+            },
+            201
+          );
+        }
+      }
+
+      // 9. /api/entries/:id
+      const entryMatch = pathname.match(/^\/api\/entries\/([^/]+)$/);
+      if (entryMatch) {
+        const id = decodeURIComponent(entryMatch[1]);
+
+        if (method === 'GET') {
+          const entry = await env.DB.prepare(
+            'SELECT * FROM entries WHERE id = ? OR slug = ?'
+          ).bind(id, id).first<EntryRecord>();
+
+          if (!entry) {
+            return errorResponse('Entry not found', 404);
+          }
+
+          const [study, entryThreads, entryRelatedStudies] = await Promise.all([
+            env.DB.prepare('SELECT collection_id FROM studies WHERE id = ?')
+              .bind(entry.study_id)
+              .first<{ collection_id: string }>(),
+            env.DB.prepare('SELECT thread_id FROM entry_threads WHERE entry_id = ?')
+              .bind(entry.id)
+              .all<{ thread_id: string }>(),
+            env.DB.prepare('SELECT study_id FROM entry_related_studies WHERE entry_id = ?')
+              .bind(entry.id)
+              .all<{ study_id: string }>(),
+          ]);
+
+          const studyCollectionMap = new Map<string, string>([
+            [entry.study_id, study?.collection_id || ''],
+          ]);
+          const entryThreadsMap = new Map<string, string[]>([
+            [entry.id, (entryThreads.results || []).map((r) => r.thread_id)],
+          ]);
+          const entryRelatedStudiesMap = new Map<string, string[]>([
+            [entry.id, (entryRelatedStudies.results || []).map((r) => r.study_id)],
+          ]);
+
+          return jsonResponse({
+            success: true,
+            data: hydrateEntry(entry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap),
+          });
+        }
+
+        if (method === 'PUT') {
+          const existing = await env.DB.prepare(
+            'SELECT * FROM entries WHERE id = ? OR slug = ?'
+          ).bind(id, id).first<EntryRecord>();
+
+          if (!existing) {
+            return errorResponse('Entry not found', 404);
+          }
+
+          const entryId = existing.id;
+          const body = (await request.json()) as {
+            title?: string;
+            slug?: string;
+            entryNumber?: string;
+            studyId?: string;
+            ruiRevision?: string;
+            summary?: string;
+            location?: string;
+            createdDate?: string;
+            publishedDate?: string;
+            lastModifiedDate?: string;
+            blocks?: unknown[];
+            threadIds?: string[];
+            relatedStudyIds?: string[];
+            visibility?: string;
+            order?: number;
+          };
+
+          if (body.studyId) {
+            const studyExists = await env.DB.prepare(
+              'SELECT id FROM studies WHERE id = ?'
+            ).bind(body.studyId).first<{ id: string }>();
+
+            if (!studyExists) {
+              return errorResponse(`Referenced study '${body.studyId}' does not exist`, 400);
+            }
+          }
+
+          const now = new Date().toISOString();
+          const lastModified = body.lastModifiedDate || now.slice(0, 10).replace(/-/g, '.');
+          const blocksJson = body.blocks !== undefined ? JSON.stringify(body.blocks) : null;
+
+          const batchStatements: D1PreparedStatement[] = [
+            env.DB.prepare(
+              `UPDATE entries
+               SET title = COALESCE(?, title),
+                   slug = COALESCE(?, slug),
+                   entry_number = COALESCE(?, entry_number),
+                   study_id = COALESCE(?, study_id),
+                   rui_revision = COALESCE(?, rui_revision),
+                   summary = COALESCE(?, summary),
+                   location = COALESCE(?, location),
+                   archival_date = COALESCE(?, archival_date),
+                   published_date = COALESCE(?, published_date),
+                   last_modified_date = ?,
+                   blocks = COALESCE(?, blocks),
+                   visibility = COALESCE(?, visibility),
+                   order_index = COALESCE(?, order_index),
+                   updated_at = ?
+               WHERE id = ?`
+            ).bind(
+              body.title ?? null,
+              body.slug ?? null,
+              body.entryNumber ?? null,
+              body.studyId ?? null,
+              body.ruiRevision ?? null,
+              body.summary ?? null,
+              body.location ?? null,
+              body.createdDate ?? null,
+              body.publishedDate ?? null,
+              lastModified,
+              blocksJson,
+              body.visibility ?? null,
+              typeof body.order === 'number' ? body.order : null,
+              now,
+              entryId
+            ),
+          ];
+
+          if (Array.isArray(body.threadIds)) {
+            batchStatements.push(
+              env.DB.prepare('DELETE FROM entry_threads WHERE entry_id = ?').bind(entryId)
+            );
+            for (const tId of body.threadIds) {
+              if (tId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO entry_threads (entry_id, thread_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(entryId, tId, now)
+                );
+              }
+            }
+          }
+
+          if (Array.isArray(body.relatedStudyIds)) {
+            batchStatements.push(
+              env.DB.prepare('DELETE FROM entry_related_studies WHERE entry_id = ?').bind(entryId)
+            );
+            for (const sId of body.relatedStudyIds) {
+              if (sId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO entry_related_studies (entry_id, study_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(entryId, sId, now)
+                );
+              }
+            }
+          }
+
+          await env.DB.batch(batchStatements);
+
+          const updatedEntry = await env.DB.prepare(
+            'SELECT * FROM entries WHERE id = ?'
+          ).bind(entryId).first<EntryRecord>();
+
+          if (!updatedEntry) {
+            return errorResponse('Failed to retrieve updated entry', 500);
+          }
+
+          const [study, entryThreads, entryRelatedStudies] = await Promise.all([
+            env.DB.prepare('SELECT collection_id FROM studies WHERE id = ?')
+              .bind(updatedEntry.study_id)
+              .first<{ collection_id: string }>(),
+            env.DB.prepare('SELECT thread_id FROM entry_threads WHERE entry_id = ?')
+              .bind(entryId)
+              .all<{ thread_id: string }>(),
+            env.DB.prepare('SELECT study_id FROM entry_related_studies WHERE entry_id = ?')
+              .bind(entryId)
+              .all<{ study_id: string }>(),
+          ]);
+
+          const studyCollectionMap = new Map<string, string>([
+            [updatedEntry.study_id, study?.collection_id || ''],
+          ]);
+          const entryThreadsMap = new Map<string, string[]>([
+            [entryId, (entryThreads.results || []).map((r) => r.thread_id)],
+          ]);
+          const entryRelatedStudiesMap = new Map<string, string[]>([
+            [entryId, (entryRelatedStudies.results || []).map((r) => r.study_id)],
+          ]);
+
+          return jsonResponse({
+            success: true,
+            data: hydrateEntry(updatedEntry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap),
+          });
+        }
+
+        if (method === 'DELETE') {
+          const existing = await env.DB.prepare(
+            'SELECT id FROM entries WHERE id = ? OR slug = ?'
+          ).bind(id, id).first<{ id: string }>();
+
+          if (!existing) {
+            return errorResponse('Entry not found', 404);
+          }
+
+          const entryId = existing.id;
+          await env.DB.batch([
+            env.DB.prepare('DELETE FROM entry_threads WHERE entry_id = ?').bind(entryId),
+            env.DB.prepare('DELETE FROM entry_related_studies WHERE entry_id = ?').bind(entryId),
+            env.DB.prepare('DELETE FROM entries WHERE id = ?').bind(entryId),
+          ]);
+
+          return jsonResponse({
+            success: true,
+            message: 'Entry deleted successfully',
+            id: entryId,
+          });
+        }
+      }
+
       // If an /api/ route is unmatched, return a 404 JSON response instead of HTML
       if (pathname.startsWith('/api/')) {
         return errorResponse(`API endpoint '${pathname}' not found`, 404);
@@ -440,8 +1137,9 @@ export default {
       }
 
       return new Response('Not found', { status: 404 });
-    } catch (err: any) {
-      return errorResponse(err?.message || 'Internal Server Error', 500);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Internal Server Error';
+      return errorResponse(message, 500);
     }
   },
 };

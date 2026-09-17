@@ -485,7 +485,7 @@ export const INITIAL_ENTRIES: Entry[] = [
     lastModifiedDate: '2025.07.07',
     publishedDate: '2025.07.07',
     location: 'Los Angeles, CA',
-    threadIds: ['thread-information-architecture', 'thread-archive', 'thread-memory'],
+    threadIds: ['thread-info-arch', 'thread-archive', 'thread-memory'],
     relatedStudyIds: ['std-revision-systems'],
     summary: 'Establishing the core fields for ruigallery.xyz: Collection, Study, Entry, Revision, Created, Location, Threads.',
     visibility: 'published',

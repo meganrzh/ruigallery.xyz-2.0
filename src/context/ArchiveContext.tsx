@@ -47,9 +47,9 @@ interface ArchiveContextType {
   getNextPrevWork: (currentId: string) => { prev?: CuratedWork; next?: CuratedWork };
 
   // Mutations for Admin
-  addEntry: (entry: Omit<Entry, 'id'>) => Entry;
-  updateEntry: (id: string, updates: Partial<Entry>) => void;
-  deleteEntry: (id: string) => void;
+  addEntry: (entry: Omit<Entry, 'id'>) => Promise<Entry>;
+  updateEntry: (id: string, updates: Partial<Entry>) => Promise<Entry>;
+  deleteEntry: (id: string) => Promise<void>;
 
   addCuratedWork: (work: Omit<CuratedWork, 'id'>) => CuratedWork;
   updateCuratedWork: (id: string, updates: Partial<CuratedWork>) => void;
@@ -63,8 +63,8 @@ interface ArchiveContextType {
   updateStudy: (id: string, updates: Partial<Study>) => Promise<void>;
   deleteStudy: (id: string) => void;
 
-  addThread: (thread: Omit<Thread, 'id'>) => Thread;
-  deleteThread: (id: string) => void;
+  addThread: (thread: Omit<Thread, 'id'>) => Promise<Thread>;
+  deleteThread: (id: string) => Promise<void>;
 
   updateAboutData: (updates: Partial<AboutData>) => void;
   resetToDefaultData: () => void;
@@ -74,8 +74,6 @@ interface ArchiveContextType {
 const STORAGE_KEYS = {
   COLLECTIONS: 'rui_archive_collections_v1',
   STUDIES: 'rui_archive_studies_v1',
-  ENTRIES: 'rui_archive_entries_v1',
-  THREADS: 'rui_archive_threads_v1',
   WORKS: 'rui_archive_works_v1',
   PROFESSIONAL: 'rui_archive_professional_v1',
   ABOUT: 'rui_archive_about_v1',
@@ -105,23 +103,10 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   });
 
-  const [entries, setEntries] = useState<Entry[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.ENTRIES);
-      return saved ? JSON.parse(saved) : INITIAL_ENTRIES;
-    } catch {
-      return INITIAL_ENTRIES;
-    }
-  });
-
-  const [threads, setThreads] = useState<Thread[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.THREADS);
-      return saved ? JSON.parse(saved) : INITIAL_THREADS;
-    } catch {
-      return INITIAL_THREADS;
-    }
-  });
+  // Entries and Threads: Single source of truth is D1/API.
+  // Initial fallback to hardcoded seed so there is no layout jump before the initial API fetch completes.
+  const [entries, setEntries] = useState<Entry[]>(INITIAL_ENTRIES);
+  const [threads, setThreads] = useState<Thread[]>(INITIAL_THREADS);
 
   const [curatedWorks, setCuratedWorks] = useState<CuratedWork[]>(() => {
     try {
@@ -155,10 +140,18 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       setIsLoading(true);
       const persistent = await api.getArchive();
-      if (persistent && persistent.collections.length > 0) {
-        setCollections(persistent.collections);
-        if (persistent.studies.length > 0) {
+      if (persistent) {
+        if (persistent.collections && persistent.collections.length > 0) {
+          setCollections(persistent.collections);
+        }
+        if (persistent.studies && persistent.studies.length > 0) {
           setStudies(persistent.studies);
+        }
+        if (persistent.threads && persistent.threads.length > 0) {
+          setThreads(persistent.threads);
+        }
+        if (persistent.entries && persistent.entries.length > 0) {
+          setEntries(persistent.entries);
         }
         setIsPersistent(true);
       }
@@ -173,7 +166,8 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     refetchFromPersistentStore();
   }, [refetchFromPersistentStore]);
 
-  // Sync to localStorage as temporary fallback during migration
+  // Sync only Collections, Studies, and unmigrated entities to localStorage
+  // NOTE: Entries and Threads are NOT persisted to localStorage. D1 is the sole source of truth.
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.COLLECTIONS, JSON.stringify(collections));
   }, [collections]);
@@ -181,14 +175,6 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.STUDIES, JSON.stringify(studies));
   }, [studies]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.ENTRIES, JSON.stringify(entries));
-  }, [entries]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.THREADS, JSON.stringify(threads));
-  }, [threads]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.WORKS, JSON.stringify(curatedWorks));
@@ -286,22 +272,20 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   // Mutations
-  const addEntry = (entryData: Omit<Entry, 'id'>): Entry => {
-    const newEntry: Entry = {
-      ...entryData,
-      id: `entry-${Date.now()}`,
-    };
-    setEntries((prev) => [newEntry, ...prev]);
-    return newEntry;
+  const addEntry = async (entryData: Omit<Entry, 'id'>): Promise<Entry> => {
+    const created = await api.createEntry(entryData);
+    setEntries((prev) => [created, ...prev]);
+    return created;
   };
 
-  const updateEntry = (id: string, updates: Partial<Entry>) => {
-    setEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, ...updates, lastModifiedDate: new Date().toISOString().slice(0, 10).replace(/-/g, '.') } : e))
-    );
+  const updateEntry = async (id: string, updates: Partial<Entry>): Promise<Entry> => {
+    const updated = await api.updateEntry(id, updates);
+    setEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
+    return updated;
   };
 
-  const deleteEntry = (id: string) => {
+  const deleteEntry = async (id: string): Promise<void> => {
+    await api.deleteEntry(id);
     setEntries((prev) => prev.filter((e) => e.id !== id));
   };
 
@@ -380,16 +364,14 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setStudies((prev) => prev.filter((s) => s.id !== id));
   };
 
-  const addThread = (threadData: Omit<Thread, 'id'>): Thread => {
-    const newThread: Thread = {
-      ...threadData,
-      id: `thread-${Date.now()}`,
-    };
-    setThreads((prev) => [...prev, newThread]);
-    return newThread;
+  const addThread = async (threadData: Omit<Thread, 'id'>): Promise<Thread> => {
+    const created = await api.createThread(threadData);
+    setThreads((prev) => [...prev, created]);
+    return created;
   };
 
-  const deleteThread = (id: string) => {
+  const deleteThread = async (id: string): Promise<void> => {
+    await api.deleteThread(id);
     setThreads((prev) => prev.filter((t) => t.id !== id));
   };
 
@@ -398,14 +380,13 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const resetToDefaultData = () => {
-    setCollections(INITIAL_COLLECTIONS);
-    setStudies(INITIAL_STUDIES);
-    setEntries(INITIAL_ENTRIES);
-    setThreads(INITIAL_THREADS);
     setCuratedWorks(INITIAL_CURATED_WORKS);
     setProfessionalItems(INITIAL_PROFESSIONAL_ITEMS);
     setAboutData(INITIAL_ABOUT_DATA);
-    localStorage.clear();
+    localStorage.removeItem(STORAGE_KEYS.WORKS);
+    localStorage.removeItem(STORAGE_KEYS.PROFESSIONAL);
+    localStorage.removeItem(STORAGE_KEYS.ABOUT);
+    refetchFromPersistentStore();
   };
 
   return (

@@ -223,7 +223,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   };
 
   // Submit Entry
-  const handlePublishEntry = (e: React.FormEvent) => {
+  const handlePublishEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!entryTitle.trim()) {
       alert('Please enter an Entry Title.');
@@ -238,31 +238,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
 
     const createdDate = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
 
-    const newEntry = addEntry({
-      slug,
-      entryNumber: nextEntryNumber,
-      collectionId: entryCollectionId,
-      studyId: entryStudyId || availableStudies[0]?.id || studies[0]?.id,
-      title: entryTitle,
-      ruiRevision: entryRevision,
-      createdDate,
-      publishedDate: createdDate,
-      location: entryLocation,
-      threadIds: entryThreadIds,
-      relatedStudyIds: entryRelatedStudyIds,
-      summary: entrySummary,
-      blocks: entryBlocks,
-      visibility: entryVisibility,
-    });
+    try {
+      await addEntry({
+        slug,
+        entryNumber: nextEntryNumber,
+        collectionId: entryCollectionId,
+        studyId: entryStudyId || availableStudies[0]?.id || studies[0]?.id,
+        title: entryTitle,
+        ruiRevision: entryRevision,
+        createdDate,
+        publishedDate: createdDate,
+        location: entryLocation,
+        threadIds: entryThreadIds,
+        relatedStudyIds: entryRelatedStudyIds,
+        summary: entrySummary,
+        blocks: entryBlocks,
+        visibility: entryVisibility,
+      });
 
-    setSuccessMessage(`Entry ${nextEntryNumber} published successfully to archive!`);
-    setTimeout(() => setSuccessMessage(null), 4000);
-    setActiveTab('entries');
+      setSuccessMessage(`Entry ${nextEntryNumber} published successfully to archive!`);
+      setTimeout(() => setSuccessMessage(null), 4000);
+      setActiveTab('entries');
 
-    // Reset Form
-    setEntryTitle('');
-    setEntrySummary('');
-    setEntryBlocks([{ type: 'paragraph', content: '' }]);
+      // Reset Form
+      setEntryTitle('');
+      setEntrySummary('');
+      setEntryBlocks([{ type: 'paragraph', content: '' }]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error publishing entry';
+      alert(`Failed to publish entry: ${msg}`);
+    }
   };
 
   // Handle Add Collection
@@ -308,19 +313,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   };
 
   // Handle Add Thread
-  const handleCreateThread = (e: React.FormEvent) => {
+  const handleCreateThread = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newThreadName) return;
+    if (!newThreadName.trim()) return;
     const slug = newThreadName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    addThread({
-      slug,
-      name: newThreadName,
-      description: newThreadDesc,
-    });
-    setNewThreadName('');
-    setNewThreadDesc('');
-    setSuccessMessage(`Thread "#${newThreadName}" created!`);
-    setTimeout(() => setSuccessMessage(null), 3000);
+    try {
+      await addThread({
+        slug,
+        name: newThreadName.trim(),
+        description: newThreadDesc.trim() || undefined,
+      });
+      setNewThreadName('');
+      setNewThreadDesc('');
+      setSuccessMessage(`Thread "#${newThreadName}" created!`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error creating thread';
+      alert(`Failed to create thread: ${msg}`);
+    }
   };
 
   // Export JSON
@@ -522,18 +532,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                       <span>View</span>
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         const newVis = entry.visibility === 'published' ? 'draft' : 'published';
-                        updateEntry(entry.id, { visibility: newVis });
+                        try {
+                          await updateEntry(entry.id, { visibility: newVis });
+                        } catch (err: unknown) {
+                          const msg = err instanceof Error ? err.message : 'Error updating entry';
+                          alert(`Failed to update entry: ${msg}`);
+                        }
                       }}
                       className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#6E6E66]"
                     >
                       {entry.visibility === 'published' ? 'Unpublish' : 'Publish'}
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (confirm(`Delete entry "${entry.title}"?`)) {
-                          deleteEntry(entry.id);
+                          try {
+                            await deleteEntry(entry.id);
+                          } catch (err: unknown) {
+                            const msg = err instanceof Error ? err.message : 'Error deleting entry';
+                            alert(`Failed to delete entry: ${msg}`);
+                          }
                         }
                       }}
                       className="p-1 text-[#8C8C82] hover:text-red-700"
@@ -1336,7 +1356,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                   <div key={thread.id} className="p-4 bg-[#FBFBFA] border border-[#E5E3DB] space-y-2">
                     <div className="flex items-center justify-between text-xs font-mono-archival">
                       <span className="text-[#9E2A2B] font-semibold">#{thread.name}</span>
-                      <span className="text-[#8C8C82]">{count} Entries</span>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[#8C8C82]">{count} Entries</span>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Delete thread "${thread.name}"?`)) {
+                              try {
+                                await deleteThread(thread.id);
+                              } catch (err: unknown) {
+                                const msg = err instanceof Error ? err.message : 'Error deleting thread';
+                                alert(`Failed to delete thread: ${msg}`);
+                              }
+                            }
+                          }}
+                          className="text-[#8C8C82] hover:text-red-700"
+                          title="Delete Thread"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                     {thread.description && (
                       <p className="font-serif text-xs text-[#6E6E66]">
