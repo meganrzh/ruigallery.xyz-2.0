@@ -134,6 +134,7 @@ export interface RawHydratedCuratedWork {
   workType: 'Essay' | 'Photography' | 'Visual Work' | 'Mixed Media' | 'Spatial Study';
   year: string;
   date: string;
+  archivalDate: string;
   featuredOnHome: boolean;
   homeLayoutWeight: 'dominant' | 'standard' | 'editorial-compact' | 'horizontal-wide';
   coverImage: string;
@@ -163,6 +164,7 @@ export function mapRawToCuratedWork(raw: RawHydratedCuratedWork): CuratedWork {
     workType: raw.workType || 'Essay',
     year: raw.year,
     date: raw.date,
+    archivalDate: raw.archivalDate || (raw.year ? `${raw.year}-01-01` : '2026-01-01'),
     featuredOnHome: Boolean(raw.featuredOnHome),
     homeLayoutWeight: raw.homeLayoutWeight || 'standard',
     coverImage: raw.coverImage || '',
@@ -174,6 +176,7 @@ export function mapRawToCuratedWork(raw: RawHydratedCuratedWork): CuratedWork {
     relatedStudyIds: raw.relatedStudyIds || [],
     relatedEntryIds: raw.relatedEntryIds || [],
     visibility: raw.visibility || 'published',
+    order: raw.order,
   };
 }
 

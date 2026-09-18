@@ -16,8 +16,8 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
     return null;
   }
 
-  const dominantWork = publishedWorks[0];
-  const secondaryWorks = publishedWorks.slice(1);
+  const dominantWork = publishedWorks.find((w) => w.homeLayoutWeight === 'dominant') || publishedWorks[0];
+  const secondaryWorks = publishedWorks.filter((w) => w.id !== dominantWork.id);
 
   return (
     <section id="curated-works-section" className="pt-8 pb-16 md:pt-10 md:pb-24">

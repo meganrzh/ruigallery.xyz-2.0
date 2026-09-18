@@ -109,6 +109,7 @@ export interface CuratedWork {
   workType: 'Essay' | 'Photography' | 'Visual Work' | 'Mixed Media' | 'Spatial Study';
   year: string;
   date: string;
+  archivalDate: string; // Canonical machine-sortable authored date YYYY-MM-DD
   featuredOnHome: boolean;
   homeLayoutWeight: 'dominant' | 'standard' | 'editorial-compact' | 'horizontal-wide';
   coverImage: string;
@@ -126,6 +127,7 @@ export interface CuratedWork {
     readingTime?: string;
   };
   visibility: 'published' | 'draft' | 'hidden';
+  order?: number;
 }
 
 export interface ProfessionalItem {

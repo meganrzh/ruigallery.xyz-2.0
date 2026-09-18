@@ -80,6 +80,10 @@ const STORAGE_KEYS = {
 
 const ArchiveContext = createContext<ArchiveContextType | undefined>(undefined);
 
+function sortCuratedWorks(works: CuratedWork[]): CuratedWork[] {
+  return [...works].sort((a, b) => (b.archivalDate || '').localeCompare(a.archivalDate || ''));
+}
+
 export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isPersistent, setIsPersistent] = useState(false);
@@ -106,7 +110,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Initial fallback to hardcoded seed so there is no layout jump before the initial API fetch completes.
   const [entries, setEntries] = useState<Entry[]>(INITIAL_ENTRIES);
   const [threads, setThreads] = useState<Thread[]>(INITIAL_THREADS);
-  const [curatedWorks, setCuratedWorks] = useState<CuratedWork[]>(INITIAL_CURATED_WORKS);
+  const [curatedWorks, setCuratedWorks] = useState<CuratedWork[]>(() => sortCuratedWorks(INITIAL_CURATED_WORKS));
 
   const [professionalItems, setProfessionalItems] = useState<ProfessionalItem[]>(() => {
     try {
@@ -145,7 +149,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setEntries(persistent.entries);
         }
         if (persistent.curatedWorks && persistent.curatedWorks.length > 0) {
-          setCuratedWorks(persistent.curatedWorks);
+          setCuratedWorks(sortCuratedWorks(persistent.curatedWorks));
         }
         setIsPersistent(true);
       }
@@ -252,7 +256,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const getNextPrevWork = (currentId: string) => {
-    const published = curatedWorks.filter((w) => w.visibility === 'published');
+    const published = sortCuratedWorks(curatedWorks.filter((w) => w.visibility === 'published'));
     const index = published.findIndex((w) => w.id === currentId || w.slug === currentId);
     if (index === -1) return {};
     return {
@@ -330,7 +334,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     try {
       const created = await api.createWork(workData);
-      setCuratedWorks((prev) => [created, ...prev]);
+      setCuratedWorks((prev) => sortCuratedWorks([created, ...prev]));
       return created;
     } catch (err) {
       if (isPersistent || process.env.NODE_ENV === 'production') {
@@ -338,7 +342,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         throw err;
       }
       console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
-      setCuratedWorks((prev) => [fallbackWork, ...prev]);
+      setCuratedWorks((prev) => sortCuratedWorks([fallbackWork, ...prev]));
       return fallbackWork;
     }
   };
@@ -346,7 +350,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updateCuratedWork = async (id: string, updates: Partial<CuratedWork>): Promise<CuratedWork> => {
     try {
       const updated = await api.updateWork(id, updates);
-      setCuratedWorks((prev) => prev.map((w) => (w.id === id ? updated : w)));
+      setCuratedWorks((prev) => sortCuratedWorks(prev.map((w) => (w.id === id ? updated : w))));
       return updated;
     } catch (err) {
       if (isPersistent || process.env.NODE_ENV === 'production') {
@@ -356,18 +360,20 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
       let localUpdated: CuratedWork | undefined;
       setCuratedWorks((prev) =>
-        prev.map((w) => {
-          if (w.id === id) {
-            localUpdated = {
-              ...w,
-              ...updates,
-              coverImageCaption: updates.coverImageCaption ? updates.coverImageCaption.trim() : undefined,
-              coverImageAlt: updates.coverImageAlt ? updates.coverImageAlt.trim() : undefined,
-            };
-            return localUpdated;
-          }
-          return w;
-        })
+        sortCuratedWorks(
+          prev.map((w) => {
+            if (w.id === id) {
+              localUpdated = {
+                ...w,
+                ...updates,
+                coverImageCaption: updates.coverImageCaption ? updates.coverImageCaption.trim() : undefined,
+                coverImageAlt: updates.coverImageAlt ? updates.coverImageAlt.trim() : undefined,
+              };
+              return localUpdated;
+            }
+            return w;
+          })
+        )
       );
       return localUpdated || ({ id, ...updates } as CuratedWork);
     }

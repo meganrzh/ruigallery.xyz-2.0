@@ -109,6 +109,7 @@ export interface CuratedWorkRecord {
   work_type: string;
   year: string;
   date: string;
+  archival_date: string;
   featured_on_home: number;
   home_layout_weight: string;
   cover_image: string;
@@ -224,6 +225,7 @@ function hydrateCuratedWork(
     workType: work.work_type,
     year: work.year,
     date: work.date,
+    archivalDate: work.archival_date || '',
     featuredOnHome: Boolean(work.featured_on_home),
     homeLayoutWeight: work.home_layout_weight,
     coverImage: work.cover_image,
@@ -294,7 +296,7 @@ export default {
           env.DB.prepare('SELECT * FROM entries ORDER BY order_index ASC, archival_date DESC').all<EntryRecord>(),
           env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
           env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
-          env.DB.prepare('SELECT * FROM curated_works ORDER BY order_index ASC, created_at ASC').all<CuratedWorkRecord>(),
+          env.DB.prepare('SELECT * FROM curated_works ORDER BY archival_date DESC, created_at DESC').all<CuratedWorkRecord>(),
           env.DB.prepare('SELECT work_id, study_id FROM curated_work_related_studies').all<CuratedWorkRelatedStudyRecord>(),
           env.DB.prepare('SELECT work_id, entry_id FROM curated_work_related_entries').all<CuratedWorkRelatedEntryRecord>(),
         ]);
@@ -1268,7 +1270,7 @@ export default {
             params.push(visibilityParam);
           }
 
-          query += ' ORDER BY order_index ASC, created_at ASC';
+          query += ' ORDER BY archival_date DESC, created_at DESC';
 
           const [worksResult, workStudiesResult, workEntriesResult] = await Promise.all([
             env.DB.prepare(query).bind(...params).all<CuratedWorkRecord>(),
@@ -1310,6 +1312,11 @@ export default {
             return errorResponse('Missing required field: slug');
           }
 
+          const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+          if (!body.archivalDate || typeof body.archivalDate !== 'string' || !ISO_DATE_REGEX.test(body.archivalDate.trim())) {
+            return errorResponse('Missing or invalid required field: archivalDate (must be YYYY-MM-DD)');
+          }
+
           const id = ((body.id as string) || `work-${Date.now()}`).trim();
           const slug = body.slug.trim().toLowerCase();
           const title = (body.title as string).trim();
@@ -1317,6 +1324,7 @@ export default {
           const workType = String(body.workType || 'Essay');
           const year = String(body.year || new Date().getFullYear().toString());
           const date = String(body.date || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
+          const archivalDate = body.archivalDate.trim();
           const featuredOnHome = body.featuredOnHome ? 1 : 0;
           const homeLayoutWeight = String(body.homeLayoutWeight || 'standard');
           const coverImage = String(body.coverImage || '');
@@ -1341,9 +1349,9 @@ export default {
           const batchStatements: D1PreparedStatement[] = [
             env.DB.prepare(
               `INSERT INTO curated_works (
-                id, slug, title, subtitle, work_type, year, date, featured_on_home,
+                id, slug, title, subtitle, work_type, year, date, archival_date, featured_on_home,
                 home_layout_weight, cover_image, cover_image_caption, cover_image_alt, excerpt, body_blocks, metadata, visibility, order_index, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).bind(
               id,
               slug,
@@ -1352,6 +1360,7 @@ export default {
               workType,
               year,
               date,
+              archivalDate,
               featuredOnHome,
               homeLayoutWeight,
               coverImage,
@@ -1485,6 +1494,16 @@ export default {
             ? String(body.date)
             : existing.date) ?? '';
 
+          const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+          let archivalDate = existing.archival_date;
+          if (body.archivalDate !== undefined && body.archivalDate !== null) {
+            const candidate = String(body.archivalDate).trim();
+            if (!ISO_DATE_REGEX.test(candidate)) {
+              return errorResponse('Invalid field: archivalDate (must be YYYY-MM-DD)');
+            }
+            archivalDate = candidate;
+          }
+
           const featuredOnHome = (body.featuredOnHome !== undefined && body.featuredOnHome !== null
             ? (body.featuredOnHome ? 1 : 0)
             : existing.featured_on_home) ?? 0;
@@ -1524,7 +1543,7 @@ export default {
           const batchStatements: D1PreparedStatement[] = [
             env.DB.prepare(
               `UPDATE curated_works SET
-                slug = ?, title = ?, subtitle = ?, work_type = ?, year = ?, date = ?,
+                slug = ?, title = ?, subtitle = ?, work_type = ?, year = ?, date = ?, archival_date = ?,
                 featured_on_home = ?, home_layout_weight = ?, cover_image = ?, cover_image_caption = ?, cover_image_alt = ?, excerpt = ?,
                 body_blocks = ?, metadata = ?, visibility = ?, order_index = ?, updated_at = ?
               WHERE id = ?`
@@ -1535,6 +1554,7 @@ export default {
               workType,
               year,
               date,
+              archivalDate,
               featuredOnHome,
               homeLayoutWeight,
               coverImage,

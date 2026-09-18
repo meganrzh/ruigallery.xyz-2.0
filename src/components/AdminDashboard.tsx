@@ -1021,6 +1021,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               <span>{work.date}</span>
                             </>
                           )}
+                          {work.archivalDate && (
+                            <>
+                              <span>•</span>
+                              <span className="text-[#3C3C38] font-mono-archival bg-[#EAE8E0] px-1 py-0.5 text-[10px]" title="Canonical Archival Date">
+                                {work.archivalDate}
+                              </span>
+                            </>
+                          )}
                           <span
                             className={`px-1.5 py-0.2 text-[10px] ${
                               work.visibility === 'published'

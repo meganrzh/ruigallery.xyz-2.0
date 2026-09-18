@@ -47,6 +47,9 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
   const [subtitle, setSubtitle] = useState(initialWork?.subtitle || '');
   const [slug, setSlug] = useState(initialWork?.slug || '');
   const [workType, setWorkType] = useState<CuratedWork['workType']>(initialWork?.workType || 'Essay');
+  const [archivalDate, setArchivalDate] = useState(
+    initialWork?.archivalDate || (isEditing ? '' : new Date().toISOString().split('T')[0])
+  );
   const [year, setYear] = useState(initialWork?.year || new Date().getFullYear().toString());
   const [date, setDate] = useState(
     initialWork?.date || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -95,6 +98,32 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
     setTitle(val);
     if (!isEditing && (!slug || slug === title.toLowerCase().replace(/[^a-z0-9]+/g, '-'))) {
       setSlug(val.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+    }
+  };
+
+  const handleArchivalDateChange = (val: string) => {
+    setArchivalDate(val);
+    if (val && val.length >= 4) {
+      const yearPart = val.slice(0, 4);
+      setYear(yearPart);
+
+      // Auto-populate Display Date on new work creation if untouched or default
+      if (!isEditing && (!date || date === new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }))) {
+        try {
+          const parts = val.split('-');
+          if (parts.length === 3) {
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            const d = parseInt(parts[2], 10);
+            if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+              const dObj = new Date(y, m - 1, d);
+              setDate(dObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
   };
 
@@ -162,6 +191,7 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
     title: title.trim(),
     subtitle: subtitle.trim() || undefined,
     workType,
+    archivalDate: archivalDate.trim(),
     year: year.trim(),
     date: date.trim(),
     featuredOnHome,
@@ -195,6 +225,11 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
       setFormError('Slug is required');
       return;
     }
+    const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+    if (!archivalDate.trim() || !ISO_DATE_REGEX.test(archivalDate.trim())) {
+      setFormError('Archival Date is required in YYYY-MM-DD format (e.g. 2024-05-01)');
+      return;
+    }
     if (!coverImage.trim()) {
       setFormError('Cover image URL is required');
       return;
@@ -212,6 +247,7 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
           title: title.trim(),
           subtitle: subtitle.trim() || '',
           workType,
+          archivalDate: archivalDate.trim(),
           year: year.trim(),
           date: date.trim(),
           featuredOnHome,
@@ -368,6 +404,23 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
               </select>
             </div>
 
+            {/* Archival Date (Canonical Chronology) */}
+            <div>
+              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                Archival Date (Canonical) *
+              </label>
+              <input
+                type="date"
+                required
+                value={archivalDate}
+                onChange={(e) => handleArchivalDateChange(e.target.value)}
+                className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413] text-sm font-mono-archival"
+              />
+              <span className="block text-[10px] font-mono-archival text-[#8C8C82] mt-1">
+                YYYY-MM-DD. Determines canonical chronological archive order.
+              </span>
+            </div>
+
             {/* Year */}
             <div>
               <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Year *</label>
@@ -379,6 +432,9 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
                 placeholder="2026"
                 className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413]"
               />
+              <span className="block text-[10px] font-mono-archival text-[#8C8C82] mt-1">
+                Derived from archival date or customized.
+              </span>
             </div>
 
             {/* Date Display */}
@@ -392,6 +448,9 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
                 placeholder="October 2026"
                 className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413]"
               />
+              <span className="block text-[10px] font-mono-archival text-[#8C8C82] mt-1">
+                Human-readable editorial label. Retains manual overrides.
+              </span>
             </div>
 
             {/* Visibility */}
