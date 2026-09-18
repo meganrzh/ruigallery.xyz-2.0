@@ -1288,23 +1288,23 @@ export default {
             return errorResponse('Missing required field: slug');
           }
 
-          const id = (body.id as string) || `work-${Date.now()}`;
+          const id = ((body.id as string) || `work-${Date.now()}`).trim();
           const slug = body.slug.trim().toLowerCase();
           const title = (body.title as string).trim();
-          const subtitle = body.subtitle ? String(body.subtitle).trim() : null;
+          const subtitle = (body.subtitle ? String(body.subtitle).trim() : null) ?? null;
           const workType = String(body.workType || 'Essay');
           const year = String(body.year || new Date().getFullYear().toString());
           const date = String(body.date || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
           const featuredOnHome = body.featuredOnHome ? 1 : 0;
           const homeLayoutWeight = String(body.homeLayoutWeight || 'standard');
           const coverImage = String(body.coverImage || '');
-          const coverImageCaption = body.coverImageCaption ? String(body.coverImageCaption).trim() : null;
-          const coverImageAlt = body.coverImageAlt ? String(body.coverImageAlt).trim() : null;
+          const coverImageCaption = (body.coverImageCaption ? String(body.coverImageCaption).trim() : null) ?? null;
+          const coverImageAlt = (body.coverImageAlt ? String(body.coverImageAlt).trim() : null) ?? null;
           const excerpt = String(body.excerpt || '');
           const bodyBlocks = JSON.stringify(Array.isArray(body.bodyBlocks) ? body.bodyBlocks : []);
-          const metadata = JSON.stringify(body.metadata && typeof body.metadata === 'object' ? body.metadata : {});
+          const metadata = JSON.stringify(body.metadata && typeof body.metadata === 'object' && body.metadata !== null ? body.metadata : {});
           const visibility = String(body.visibility || 'published');
-          const orderIndex = typeof body.order === 'number' ? body.order : 0;
+          const orderIndex = (typeof body.order === 'number' ? body.order : 0) ?? 0;
           const now = new Date().toISOString();
 
           // Check if slug or id exists
@@ -1347,11 +1347,11 @@ export default {
 
           if (Array.isArray(body.relatedStudyIds)) {
             for (const sId of body.relatedStudyIds) {
-              if (sId) {
+              if (sId && typeof sId === 'string') {
                 batchStatements.push(
                   env.DB.prepare(
                     'INSERT OR IGNORE INTO curated_work_related_studies (work_id, study_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(id, sId, now)
+                  ).bind(id, sId.trim(), now)
                 );
               }
             }
@@ -1359,11 +1359,11 @@ export default {
 
           if (Array.isArray(body.relatedEntryIds)) {
             for (const eId of body.relatedEntryIds) {
-              if (eId) {
+              if (eId && typeof eId === 'string') {
                 batchStatements.push(
                   env.DB.prepare(
                     'INSERT OR IGNORE INTO curated_work_related_entries (work_id, entry_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(id, eId, now)
+                  ).bind(id, eId.trim(), now)
                 );
               }
             }
@@ -1441,22 +1441,69 @@ export default {
           const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
           const now = new Date().toISOString();
 
-          const slug = body.slug !== undefined ? String(body.slug).trim().toLowerCase() : existing.slug;
-          const title = body.title !== undefined ? String(body.title).trim() : existing.title;
-          const subtitle = body.subtitle !== undefined ? (body.subtitle ? String(body.subtitle).trim() : null) : existing.subtitle;
-          const workType = body.workType !== undefined ? String(body.workType) : existing.work_type;
-          const year = body.year !== undefined ? String(body.year) : existing.year;
-          const date = body.date !== undefined ? String(body.date) : existing.date;
-          const featuredOnHome = body.featuredOnHome !== undefined ? (body.featuredOnHome ? 1 : 0) : existing.featured_on_home;
-          const homeLayoutWeight = body.homeLayoutWeight !== undefined ? String(body.homeLayoutWeight) : existing.home_layout_weight;
-          const coverImage = body.coverImage !== undefined ? String(body.coverImage) : existing.cover_image;
-          const coverImageCaption = body.coverImageCaption !== undefined ? (body.coverImageCaption ? String(body.coverImageCaption).trim() : null) : existing.cover_image_caption;
-          const coverImageAlt = body.coverImageAlt !== undefined ? (body.coverImageAlt ? String(body.coverImageAlt).trim() : null) : existing.cover_image_alt;
-          const excerpt = body.excerpt !== undefined ? String(body.excerpt) : existing.excerpt;
-          const bodyBlocks = body.bodyBlocks !== undefined ? JSON.stringify(body.bodyBlocks) : existing.body_blocks;
-          const metadata = body.metadata !== undefined ? JSON.stringify(body.metadata) : existing.metadata;
-          const visibility = body.visibility !== undefined ? String(body.visibility) : existing.visibility;
-          const orderIndex = typeof body.order === 'number' ? body.order : existing.order_index;
+          const slug = (body.slug !== undefined && body.slug !== null
+            ? String(body.slug).trim().toLowerCase()
+            : existing.slug) ?? '';
+
+          const title = (body.title !== undefined && body.title !== null
+            ? String(body.title).trim()
+            : existing.title) ?? '';
+
+          const subtitle = (body.subtitle !== undefined
+            ? (body.subtitle ? String(body.subtitle).trim() : null)
+            : (existing.subtitle ?? null)) ?? null;
+
+          const workType = (body.workType !== undefined && body.workType !== null
+            ? String(body.workType)
+            : existing.work_type) ?? 'Essay';
+
+          const year = (body.year !== undefined && body.year !== null
+            ? String(body.year)
+            : existing.year) ?? '';
+
+          const date = (body.date !== undefined && body.date !== null
+            ? String(body.date)
+            : existing.date) ?? '';
+
+          const featuredOnHome = (body.featuredOnHome !== undefined && body.featuredOnHome !== null
+            ? (body.featuredOnHome ? 1 : 0)
+            : existing.featured_on_home) ?? 0;
+
+          const homeLayoutWeight = (body.homeLayoutWeight !== undefined && body.homeLayoutWeight !== null
+            ? String(body.homeLayoutWeight)
+            : existing.home_layout_weight) ?? 'standard';
+
+          const coverImage = (body.coverImage !== undefined && body.coverImage !== null
+            ? String(body.coverImage)
+            : existing.cover_image) ?? '';
+
+          const coverImageCaption = (body.coverImageCaption !== undefined
+            ? (body.coverImageCaption ? String(body.coverImageCaption).trim() : null)
+            : (existing.cover_image_caption ?? null)) ?? null;
+
+          const coverImageAlt = (body.coverImageAlt !== undefined
+            ? (body.coverImageAlt ? String(body.coverImageAlt).trim() : null)
+            : (existing.cover_image_alt ?? null)) ?? null;
+
+          const excerpt = (body.excerpt !== undefined && body.excerpt !== null
+            ? String(body.excerpt)
+            : existing.excerpt) ?? '';
+
+          const bodyBlocks = (body.bodyBlocks !== undefined && body.bodyBlocks !== null
+            ? JSON.stringify(Array.isArray(body.bodyBlocks) ? body.bodyBlocks : [])
+            : (existing.body_blocks ?? '[]')) ?? '[]';
+
+          const metadata = (body.metadata !== undefined && body.metadata !== null
+            ? JSON.stringify(typeof body.metadata === 'object' && body.metadata !== null ? body.metadata : {})
+            : (existing.metadata ?? '{}')) ?? '{}';
+
+          const visibility = (body.visibility !== undefined && body.visibility !== null
+            ? String(body.visibility)
+            : existing.visibility) ?? 'published';
+
+          const orderIndex = (typeof body.order === 'number'
+            ? body.order
+            : existing.order_index) ?? 0;
 
           const batchStatements: D1PreparedStatement[] = [
             env.DB.prepare(
@@ -1492,11 +1539,11 @@ export default {
               env.DB.prepare('DELETE FROM curated_work_related_studies WHERE work_id = ?').bind(workId)
             );
             for (const sId of body.relatedStudyIds) {
-              if (sId) {
+              if (sId && typeof sId === 'string') {
                 batchStatements.push(
                   env.DB.prepare(
                     'INSERT OR IGNORE INTO curated_work_related_studies (work_id, study_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(workId, sId, now)
+                  ).bind(workId, sId.trim(), now)
                 );
               }
             }
@@ -1507,11 +1554,11 @@ export default {
               env.DB.prepare('DELETE FROM curated_work_related_entries WHERE work_id = ?').bind(workId)
             );
             for (const eId of body.relatedEntryIds) {
-              if (eId) {
+              if (eId && typeof eId === 'string') {
                 batchStatements.push(
                   env.DB.prepare(
                     'INSERT OR IGNORE INTO curated_work_related_entries (work_id, entry_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(workId, eId, now)
+                  ).bind(workId, eId.trim(), now)
                 );
               }
             }

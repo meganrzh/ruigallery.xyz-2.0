@@ -210,15 +210,15 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
         {
           slug: slug.trim().toLowerCase(),
           title: title.trim(),
-          subtitle: subtitle.trim() || undefined,
+          subtitle: subtitle.trim() || '',
           workType,
           year: year.trim(),
           date: date.trim(),
           featuredOnHome,
           homeLayoutWeight,
           coverImage: coverImage.trim(),
-          coverImageCaption: coverImageCaption.trim() || undefined,
-          coverImageAlt: coverImageAlt.trim() || undefined,
+          coverImageCaption: coverImageCaption.trim() || '',
+          coverImageAlt: coverImageAlt.trim() || '',
           excerpt: excerpt.trim(),
           bodyBlocks,
           metadata: {
