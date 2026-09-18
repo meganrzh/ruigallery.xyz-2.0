@@ -101,6 +101,36 @@ export interface EntryRelatedStudyRecord {
   study_id: string;
 }
 
+export interface CuratedWorkRecord {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string | null;
+  work_type: string;
+  year: string;
+  date: string;
+  featured_on_home: number;
+  home_layout_weight: string;
+  cover_image: string;
+  excerpt: string;
+  body_blocks: string;
+  metadata: string | null;
+  visibility: string;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CuratedWorkRelatedStudyRecord {
+  work_id: string;
+  study_id: string;
+}
+
+export interface CuratedWorkRelatedEntryRecord {
+  work_id: string;
+  entry_id: string;
+}
+
 function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -165,6 +195,48 @@ function hydrateEntry(
   };
 }
 
+function hydrateCuratedWork(
+  work: CuratedWorkRecord,
+  workStudiesMap: Map<string, string[]>,
+  workEntriesMap: Map<string, string[]>
+) {
+  let bodyBlocks: unknown[] = [];
+  try {
+    bodyBlocks = typeof work.body_blocks === 'string' ? JSON.parse(work.body_blocks) : (work.body_blocks || []);
+  } catch {
+    bodyBlocks = [];
+  }
+
+  let metadata: Record<string, string> = {};
+  try {
+    metadata = typeof work.metadata === 'string' ? JSON.parse(work.metadata) : (work.metadata || {});
+  } catch {
+    metadata = {};
+  }
+
+  return {
+    id: work.id,
+    slug: work.slug,
+    title: work.title,
+    subtitle: work.subtitle || undefined,
+    workType: work.work_type,
+    year: work.year,
+    date: work.date,
+    featuredOnHome: Boolean(work.featured_on_home),
+    homeLayoutWeight: work.home_layout_weight,
+    coverImage: work.cover_image,
+    excerpt: work.excerpt,
+    bodyBlocks,
+    metadata,
+    relatedStudyIds: workStudiesMap.get(work.id) || [],
+    relatedEntryIds: workEntriesMap.get(work.id) || [],
+    visibility: (work.visibility || 'published') as 'published' | 'draft' | 'hidden',
+    order: work.order_index,
+    createdAt: work.created_at,
+    updatedAt: work.updated_at,
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -186,6 +258,9 @@ export default {
           entriesResult,
           entryThreadsResult,
           entryRelatedStudiesResult,
+          worksResult,
+          workStudiesResult,
+          workEntriesResult,
         ] = await Promise.all([
           env.DB.prepare('SELECT * FROM collections ORDER BY order_index ASC, created_at ASC').all<CollectionRecord>(),
           env.DB.prepare('SELECT * FROM studies ORDER BY order_index ASC, created_at ASC').all<StudyRecord>(),
@@ -193,6 +268,9 @@ export default {
           env.DB.prepare('SELECT * FROM entries ORDER BY order_index ASC, archival_date DESC').all<EntryRecord>(),
           env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
           env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
+          env.DB.prepare('SELECT * FROM curated_works ORDER BY order_index ASC, created_at ASC').all<CuratedWorkRecord>(),
+          env.DB.prepare('SELECT work_id, study_id FROM curated_work_related_studies').all<CuratedWorkRelatedStudyRecord>(),
+          env.DB.prepare('SELECT work_id, entry_id FROM curated_work_related_entries').all<CuratedWorkRelatedEntryRecord>(),
         ]);
 
         const studyCollectionMap = new Map<string, string>();
@@ -228,6 +306,24 @@ export default {
           updatedAt: t.updated_at,
         }));
 
+        const workStudiesMap = new Map<string, string[]>();
+        for (const ws of workStudiesResult.results || []) {
+          const list = workStudiesMap.get(ws.work_id) || [];
+          list.push(ws.study_id);
+          workStudiesMap.set(ws.work_id, list);
+        }
+
+        const workEntriesMap = new Map<string, string[]>();
+        for (const we of workEntriesResult.results || []) {
+          const list = workEntriesMap.get(we.work_id) || [];
+          list.push(we.entry_id);
+          workEntriesMap.set(we.work_id, list);
+        }
+
+        const hydratedWorks = (worksResult.results || []).map((w) =>
+          hydrateCuratedWork(w, workStudiesMap, workEntriesMap)
+        );
+
         return jsonResponse({
           success: true,
           data: {
@@ -235,6 +331,7 @@ export default {
             studies: studiesResult.results || [],
             threads: hydratedThreads,
             entries: hydratedEntries,
+            curatedWorks: hydratedWorks,
           },
         });
       }
@@ -1122,6 +1219,344 @@ export default {
             success: true,
             message: 'Entry deleted successfully',
             id: entryId,
+          });
+        }
+      }
+
+      // 10. /api/works
+      if (pathname === '/api/works') {
+        if (method === 'GET') {
+          const featuredParam = url.searchParams.get('featured');
+          const visibilityParam = url.searchParams.get('visibility');
+
+          let query = 'SELECT * FROM curated_works WHERE 1=1';
+          const params: unknown[] = [];
+
+          if (featuredParam !== null) {
+            query += ' AND featured_on_home = ?';
+            params.push(featuredParam === 'true' || featuredParam === '1' ? 1 : 0);
+          }
+
+          if (visibilityParam) {
+            query += ' AND visibility = ?';
+            params.push(visibilityParam);
+          }
+
+          query += ' ORDER BY order_index ASC, created_at ASC';
+
+          const [worksResult, workStudiesResult, workEntriesResult] = await Promise.all([
+            env.DB.prepare(query).bind(...params).all<CuratedWorkRecord>(),
+            env.DB.prepare('SELECT work_id, study_id FROM curated_work_related_studies').all<CuratedWorkRelatedStudyRecord>(),
+            env.DB.prepare('SELECT work_id, entry_id FROM curated_work_related_entries').all<CuratedWorkRelatedEntryRecord>(),
+          ]);
+
+          const workStudiesMap = new Map<string, string[]>();
+          for (const ws of workStudiesResult.results || []) {
+            const list = workStudiesMap.get(ws.work_id) || [];
+            list.push(ws.study_id);
+            workStudiesMap.set(ws.work_id, list);
+          }
+
+          const workEntriesMap = new Map<string, string[]>();
+          for (const we of workEntriesResult.results || []) {
+            const list = workEntriesMap.get(we.work_id) || [];
+            list.push(we.entry_id);
+            workEntriesMap.set(we.work_id, list);
+          }
+
+          const hydratedWorks = (worksResult.results || []).map((w) =>
+            hydrateCuratedWork(w, workStudiesMap, workEntriesMap)
+          );
+
+          return jsonResponse({
+            success: true,
+            data: hydratedWorks,
+          });
+        }
+
+        if (method === 'POST') {
+          const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+
+          if (!body.title || typeof body.title !== 'string') {
+            return errorResponse('Missing required field: title');
+          }
+          if (!body.slug || typeof body.slug !== 'string') {
+            return errorResponse('Missing required field: slug');
+          }
+
+          const id = (body.id as string) || `work-${Date.now()}`;
+          const slug = body.slug.trim().toLowerCase();
+          const title = (body.title as string).trim();
+          const subtitle = body.subtitle ? String(body.subtitle).trim() : null;
+          const workType = String(body.workType || 'Essay');
+          const year = String(body.year || new Date().getFullYear().toString());
+          const date = String(body.date || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
+          const featuredOnHome = body.featuredOnHome ? 1 : 0;
+          const homeLayoutWeight = String(body.homeLayoutWeight || 'standard');
+          const coverImage = String(body.coverImage || '');
+          const excerpt = String(body.excerpt || '');
+          const bodyBlocks = JSON.stringify(Array.isArray(body.bodyBlocks) ? body.bodyBlocks : []);
+          const metadata = JSON.stringify(body.metadata && typeof body.metadata === 'object' ? body.metadata : {});
+          const visibility = String(body.visibility || 'published');
+          const orderIndex = typeof body.order === 'number' ? body.order : 0;
+          const now = new Date().toISOString();
+
+          // Check if slug or id exists
+          const existing = await env.DB.prepare(
+            'SELECT id FROM curated_works WHERE id = ? OR slug = ?'
+          ).bind(id, slug).first();
+
+          if (existing) {
+            return errorResponse(`Curated work with ID '${id}' or slug '${slug}' already exists`, 409);
+          }
+
+          const batchStatements: D1PreparedStatement[] = [
+            env.DB.prepare(
+              `INSERT INTO curated_works (
+                id, slug, title, subtitle, work_type, year, date, featured_on_home,
+                home_layout_weight, cover_image, excerpt, body_blocks, metadata, visibility, order_index, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+              id,
+              slug,
+              title,
+              subtitle,
+              workType,
+              year,
+              date,
+              featuredOnHome,
+              homeLayoutWeight,
+              coverImage,
+              excerpt,
+              bodyBlocks,
+              metadata,
+              visibility,
+              orderIndex,
+              now,
+              now
+            ),
+          ];
+
+          if (Array.isArray(body.relatedStudyIds)) {
+            for (const sId of body.relatedStudyIds) {
+              if (sId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO curated_work_related_studies (work_id, study_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(id, sId, now)
+                );
+              }
+            }
+          }
+
+          if (Array.isArray(body.relatedEntryIds)) {
+            for (const eId of body.relatedEntryIds) {
+              if (eId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO curated_work_related_entries (work_id, entry_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(id, eId, now)
+                );
+              }
+            }
+          }
+
+          await env.DB.batch(batchStatements);
+
+          const createdWork = await env.DB.prepare(
+            'SELECT * FROM curated_works WHERE id = ?'
+          ).bind(id).first<CuratedWorkRecord>();
+
+          if (!createdWork) {
+            return errorResponse('Failed to retrieve created curated work', 500);
+          }
+
+          const workStudiesMap = new Map<string, string[]>([[id, (body.relatedStudyIds as string[]) || []]]);
+          const workEntriesMap = new Map<string, string[]>([[id, (body.relatedEntryIds as string[]) || []]]);
+
+          return jsonResponse(
+            {
+              success: true,
+              data: hydrateCuratedWork(createdWork, workStudiesMap, workEntriesMap),
+            },
+            201
+          );
+        }
+      }
+
+      // 11. /api/works/:id
+      const workMatch = pathname.match(/^\/api\/works\/([^/]+)$/);
+      if (workMatch) {
+        const id = decodeURIComponent(workMatch[1]);
+
+        if (method === 'GET') {
+          const work = await env.DB.prepare(
+            'SELECT * FROM curated_works WHERE id = ? OR slug = ?'
+          ).bind(id, id).first<CuratedWorkRecord>();
+
+          if (!work) {
+            return errorResponse('Curated work not found', 404);
+          }
+
+          const [studiesResult, entriesResult] = await Promise.all([
+            env.DB.prepare('SELECT study_id FROM curated_work_related_studies WHERE work_id = ?')
+              .bind(work.id)
+              .all<{ study_id: string }>(),
+            env.DB.prepare('SELECT entry_id FROM curated_work_related_entries WHERE work_id = ?')
+              .bind(work.id)
+              .all<{ entry_id: string }>(),
+          ]);
+
+          const workStudiesMap = new Map<string, string[]>([
+            [work.id, (studiesResult.results || []).map((r) => r.study_id)],
+          ]);
+          const workEntriesMap = new Map<string, string[]>([
+            [work.id, (entriesResult.results || []).map((r) => r.entry_id)],
+          ]);
+
+          return jsonResponse({
+            success: true,
+            data: hydrateCuratedWork(work, workStudiesMap, workEntriesMap),
+          });
+        }
+
+        if (method === 'PUT') {
+          const existing = await env.DB.prepare(
+            'SELECT * FROM curated_works WHERE id = ? OR slug = ?'
+          ).bind(id, id).first<CuratedWorkRecord>();
+
+          if (!existing) {
+            return errorResponse('Curated work not found', 404);
+          }
+
+          const workId = existing.id;
+          const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+          const now = new Date().toISOString();
+
+          const slug = body.slug !== undefined ? String(body.slug).trim().toLowerCase() : existing.slug;
+          const title = body.title !== undefined ? String(body.title).trim() : existing.title;
+          const subtitle = body.subtitle !== undefined ? (body.subtitle ? String(body.subtitle).trim() : null) : existing.subtitle;
+          const workType = body.workType !== undefined ? String(body.workType) : existing.work_type;
+          const year = body.year !== undefined ? String(body.year) : existing.year;
+          const date = body.date !== undefined ? String(body.date) : existing.date;
+          const featuredOnHome = body.featuredOnHome !== undefined ? (body.featuredOnHome ? 1 : 0) : existing.featured_on_home;
+          const homeLayoutWeight = body.homeLayoutWeight !== undefined ? String(body.homeLayoutWeight) : existing.home_layout_weight;
+          const coverImage = body.coverImage !== undefined ? String(body.coverImage) : existing.cover_image;
+          const excerpt = body.excerpt !== undefined ? String(body.excerpt) : existing.excerpt;
+          const bodyBlocks = body.bodyBlocks !== undefined ? JSON.stringify(body.bodyBlocks) : existing.body_blocks;
+          const metadata = body.metadata !== undefined ? JSON.stringify(body.metadata) : existing.metadata;
+          const visibility = body.visibility !== undefined ? String(body.visibility) : existing.visibility;
+          const orderIndex = typeof body.order === 'number' ? body.order : existing.order_index;
+
+          const batchStatements: D1PreparedStatement[] = [
+            env.DB.prepare(
+              `UPDATE curated_works SET
+                slug = ?, title = ?, subtitle = ?, work_type = ?, year = ?, date = ?,
+                featured_on_home = ?, home_layout_weight = ?, cover_image = ?, excerpt = ?,
+                body_blocks = ?, metadata = ?, visibility = ?, order_index = ?, updated_at = ?
+              WHERE id = ?`
+            ).bind(
+              slug,
+              title,
+              subtitle,
+              workType,
+              year,
+              date,
+              featuredOnHome,
+              homeLayoutWeight,
+              coverImage,
+              excerpt,
+              bodyBlocks,
+              metadata,
+              visibility,
+              orderIndex,
+              now,
+              workId
+            ),
+          ];
+
+          if (Array.isArray(body.relatedStudyIds)) {
+            batchStatements.push(
+              env.DB.prepare('DELETE FROM curated_work_related_studies WHERE work_id = ?').bind(workId)
+            );
+            for (const sId of body.relatedStudyIds) {
+              if (sId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO curated_work_related_studies (work_id, study_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(workId, sId, now)
+                );
+              }
+            }
+          }
+
+          if (Array.isArray(body.relatedEntryIds)) {
+            batchStatements.push(
+              env.DB.prepare('DELETE FROM curated_work_related_entries WHERE work_id = ?').bind(workId)
+            );
+            for (const eId of body.relatedEntryIds) {
+              if (eId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO curated_work_related_entries (work_id, entry_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(workId, eId, now)
+                );
+              }
+            }
+          }
+
+          await env.DB.batch(batchStatements);
+
+          const updatedWork = await env.DB.prepare(
+            'SELECT * FROM curated_works WHERE id = ?'
+          ).bind(workId).first<CuratedWorkRecord>();
+
+          if (!updatedWork) {
+            return errorResponse('Failed to retrieve updated curated work', 500);
+          }
+
+          const [studiesResult, entriesResult] = await Promise.all([
+            env.DB.prepare('SELECT study_id FROM curated_work_related_studies WHERE work_id = ?')
+              .bind(workId)
+              .all<{ study_id: string }>(),
+            env.DB.prepare('SELECT entry_id FROM curated_work_related_entries WHERE work_id = ?')
+              .bind(workId)
+              .all<{ entry_id: string }>(),
+          ]);
+
+          const workStudiesMap = new Map<string, string[]>([
+            [workId, (studiesResult.results || []).map((r) => r.study_id)],
+          ]);
+          const workEntriesMap = new Map<string, string[]>([
+            [workId, (entriesResult.results || []).map((r) => r.entry_id)],
+          ]);
+
+          return jsonResponse({
+            success: true,
+            data: hydrateCuratedWork(updatedWork, workStudiesMap, workEntriesMap),
+          });
+        }
+
+        if (method === 'DELETE') {
+          const existing = await env.DB.prepare(
+            'SELECT id FROM curated_works WHERE id = ? OR slug = ?'
+          ).bind(id, id).first<{ id: string }>();
+
+          if (!existing) {
+            return errorResponse('Curated work not found', 404);
+          }
+
+          const workId = existing.id;
+          await env.DB.batch([
+            env.DB.prepare('DELETE FROM curated_work_related_studies WHERE work_id = ?').bind(workId),
+            env.DB.prepare('DELETE FROM curated_work_related_entries WHERE work_id = ?').bind(workId),
+            env.DB.prepare('DELETE FROM curated_works WHERE id = ?').bind(workId),
+          ]);
+
+          return jsonResponse({
+            success: true,
+            message: 'Curated work deleted successfully',
+            id: workId,
           });
         }
       }

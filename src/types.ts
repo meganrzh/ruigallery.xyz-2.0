@@ -65,11 +65,41 @@ export interface Thread {
   description?: string;
 }
 
+export interface CuratedTextBlock {
+  type: 'text';
+  content: string;
+}
+
+export interface CuratedImageBlock {
+  type: 'image';
+  url: string;
+  caption?: string;
+  alt?: string;
+  fullWidth?: boolean;
+  aspectRatio?: string;
+}
+
+export interface CuratedPullquoteBlock {
+  type: 'pullquote';
+  quote: string;
+  attribution?: string;
+}
+
+export interface CuratedTwoColumnImagesBlock {
+  type: 'two_column_images';
+  url1: string;
+  caption1?: string;
+  alt1?: string;
+  url2: string;
+  caption2?: string;
+  alt2?: string;
+}
+
 export type CuratedWorkBlock =
-  | { type: 'text'; content: string }
-  | { type: 'image'; url: string; caption?: string; alt?: string; fullWidth?: boolean }
-  | { type: 'pullquote'; quote: string; attribution?: string }
-  | { type: 'two_column_images'; url1: string; caption1?: string; url2: string; caption2?: string };
+  | CuratedTextBlock
+  | CuratedImageBlock
+  | CuratedPullquoteBlock
+  | CuratedTwoColumnImagesBlock;
 
 export interface CuratedWork {
   id: string;

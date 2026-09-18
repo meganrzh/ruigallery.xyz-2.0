@@ -51,9 +51,9 @@ interface ArchiveContextType {
   updateEntry: (id: string, updates: Partial<Entry>) => Promise<Entry>;
   deleteEntry: (id: string) => Promise<void>;
 
-  addCuratedWork: (work: Omit<CuratedWork, 'id'>) => CuratedWork;
-  updateCuratedWork: (id: string, updates: Partial<CuratedWork>) => void;
-  deleteCuratedWork: (id: string) => void;
+  addCuratedWork: (work: Omit<CuratedWork, 'id'>) => Promise<CuratedWork>;
+  updateCuratedWork: (id: string, updates: Partial<CuratedWork>) => Promise<CuratedWork>;
+  deleteCuratedWork: (id: string) => Promise<void>;
 
   addCollection: (col: Omit<Collection, 'id'>) => Promise<Collection>;
   updateCollection: (id: string, updates: Partial<Collection>) => Promise<void>;
@@ -74,7 +74,6 @@ interface ArchiveContextType {
 const STORAGE_KEYS = {
   COLLECTIONS: 'rui_archive_collections_v1',
   STUDIES: 'rui_archive_studies_v1',
-  WORKS: 'rui_archive_works_v1',
   PROFESSIONAL: 'rui_archive_professional_v1',
   ABOUT: 'rui_archive_about_v1',
 };
@@ -103,19 +102,11 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   });
 
-  // Entries and Threads: Single source of truth is D1/API.
+  // Entries, Threads, and Curated Works: Single source of truth is D1/API.
   // Initial fallback to hardcoded seed so there is no layout jump before the initial API fetch completes.
   const [entries, setEntries] = useState<Entry[]>(INITIAL_ENTRIES);
   const [threads, setThreads] = useState<Thread[]>(INITIAL_THREADS);
-
-  const [curatedWorks, setCuratedWorks] = useState<CuratedWork[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.WORKS);
-      return saved ? JSON.parse(saved) : INITIAL_CURATED_WORKS;
-    } catch {
-      return INITIAL_CURATED_WORKS;
-    }
-  });
+  const [curatedWorks, setCuratedWorks] = useState<CuratedWork[]>(INITIAL_CURATED_WORKS);
 
   const [professionalItems, setProfessionalItems] = useState<ProfessionalItem[]>(() => {
     try {
@@ -153,6 +144,9 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (persistent.entries && persistent.entries.length > 0) {
           setEntries(persistent.entries);
         }
+        if (persistent.curatedWorks && persistent.curatedWorks.length > 0) {
+          setCuratedWorks(persistent.curatedWorks);
+        }
         setIsPersistent(true);
       }
     } catch (err) {
@@ -167,7 +161,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [refetchFromPersistentStore]);
 
   // Sync only Collections, Studies, and unmigrated entities to localStorage
-  // NOTE: Entries and Threads are NOT persisted to localStorage. D1 is the sole source of truth.
+  // NOTE: Entries, Threads, and Curated Works are NOT persisted to localStorage. D1 is the sole source of truth.
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.COLLECTIONS, JSON.stringify(collections));
   }, [collections]);
@@ -175,10 +169,6 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.STUDIES, JSON.stringify(studies));
   }, [studies]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.WORKS, JSON.stringify(curatedWorks));
-  }, [curatedWorks]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.PROFESSIONAL, JSON.stringify(professionalItems));
@@ -273,37 +263,123 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Mutations
   const addEntry = async (entryData: Omit<Entry, 'id'>): Promise<Entry> => {
-    const created = await api.createEntry(entryData);
-    setEntries((prev) => [created, ...prev]);
-    return created;
+    const tempId = `entry-${Date.now()}`;
+    const fallbackEntry: Entry = {
+      ...entryData,
+      id: tempId,
+    };
+    try {
+      const created = await api.createEntry(entryData);
+      setEntries((prev) => [created, ...prev]);
+      return created;
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for addEntry:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
+      setEntries((prev) => [fallbackEntry, ...prev]);
+      return fallbackEntry;
+    }
   };
 
   const updateEntry = async (id: string, updates: Partial<Entry>): Promise<Entry> => {
-    const updated = await api.updateEntry(id, updates);
-    setEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
-    return updated;
+    try {
+      const updated = await api.updateEntry(id, updates);
+      setEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
+      return updated;
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for updateEntry:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
+      let localUpdated: Entry | undefined;
+      setEntries((prev) =>
+        prev.map((e) => {
+          if (e.id === id) {
+            localUpdated = { ...e, ...updates };
+            return localUpdated;
+          }
+          return e;
+        })
+      );
+      return localUpdated || ({ id, ...updates } as Entry);
+    }
   };
 
   const deleteEntry = async (id: string): Promise<void> => {
-    await api.deleteEntry(id);
-    setEntries((prev) => prev.filter((e) => e.id !== id));
+    try {
+      await api.deleteEntry(id);
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for deleteEntry:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, removing from local state', err);
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+    }
   };
 
-  const addCuratedWork = (workData: Omit<CuratedWork, 'id'>): CuratedWork => {
-    const newWork: CuratedWork = {
+  const addCuratedWork = async (workData: Omit<CuratedWork, 'id'>): Promise<CuratedWork> => {
+    const tempId = `work-${Date.now()}`;
+    const fallbackWork: CuratedWork = {
       ...workData,
-      id: `work-${Date.now()}`,
+      id: tempId,
     };
-    setCuratedWorks((prev) => [newWork, ...prev]);
-    return newWork;
+    try {
+      const created = await api.createWork(workData);
+      setCuratedWorks((prev) => [created, ...prev]);
+      return created;
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for addCuratedWork:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
+      setCuratedWorks((prev) => [fallbackWork, ...prev]);
+      return fallbackWork;
+    }
   };
 
-  const updateCuratedWork = (id: string, updates: Partial<CuratedWork>) => {
-    setCuratedWorks((prev) => prev.map((w) => (w.id === id ? { ...w, ...updates } : w)));
+  const updateCuratedWork = async (id: string, updates: Partial<CuratedWork>): Promise<CuratedWork> => {
+    try {
+      const updated = await api.updateWork(id, updates);
+      setCuratedWorks((prev) => prev.map((w) => (w.id === id ? updated : w)));
+      return updated;
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for updateCuratedWork:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
+      let localUpdated: CuratedWork | undefined;
+      setCuratedWorks((prev) =>
+        prev.map((w) => {
+          if (w.id === id) {
+            localUpdated = { ...w, ...updates };
+            return localUpdated;
+          }
+          return w;
+        })
+      );
+      return localUpdated || ({ id, ...updates } as CuratedWork);
+    }
   };
 
-  const deleteCuratedWork = (id: string) => {
-    setCuratedWorks((prev) => prev.filter((w) => w.id !== id));
+  const deleteCuratedWork = async (id: string): Promise<void> => {
+    try {
+      await api.deleteWork(id);
+      setCuratedWorks((prev) => prev.filter((w) => w.id !== id));
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for deleteCuratedWork:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, removing from local state', err);
+      setCuratedWorks((prev) => prev.filter((w) => w.id !== id));
+    }
   };
 
   const addCollection = async (colData: Omit<Collection, 'id'>): Promise<Collection> => {
@@ -365,14 +441,38 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const addThread = async (threadData: Omit<Thread, 'id'>): Promise<Thread> => {
-    const created = await api.createThread(threadData);
-    setThreads((prev) => [...prev, created]);
-    return created;
+    const tempId = `thread-${Date.now()}`;
+    const fallbackThread: Thread = {
+      ...threadData,
+      id: tempId,
+    };
+    try {
+      const created = await api.createThread(threadData);
+      setThreads((prev) => [...prev, created]);
+      return created;
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for addThread:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
+      setThreads((prev) => [...prev, fallbackThread]);
+      return fallbackThread;
+    }
   };
 
   const deleteThread = async (id: string): Promise<void> => {
-    await api.deleteThread(id);
-    setThreads((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await api.deleteThread(id);
+      setThreads((prev) => prev.filter((t) => t.id !== id));
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for deleteThread:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, removing from local state', err);
+      setThreads((prev) => prev.filter((t) => t.id !== id));
+    }
   };
 
   const updateAboutData = (updates: Partial<AboutData>) => {
@@ -380,10 +480,8 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const resetToDefaultData = () => {
-    setCuratedWorks(INITIAL_CURATED_WORKS);
     setProfessionalItems(INITIAL_PROFESSIONAL_ITEMS);
     setAboutData(INITIAL_ABOUT_DATA);
-    localStorage.removeItem(STORAGE_KEYS.WORKS);
     localStorage.removeItem(STORAGE_KEYS.PROFESSIONAL);
     localStorage.removeItem(STORAGE_KEYS.ABOUT);
     refetchFromPersistentStore();

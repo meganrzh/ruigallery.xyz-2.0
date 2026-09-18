@@ -3,7 +3,7 @@
  * Connects frontend components to Cloudflare Pages Functions / Worker and D1 database.
  */
 
-import { Collection, Study, Thread, Entry, EntryBlock, RuiRevision } from '../types';
+import { Collection, Study, Thread, Entry, EntryBlock, RuiRevision, CuratedWork, CuratedWorkBlock } from '../types';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -126,26 +126,91 @@ export function mapRawToEntry(raw: RawHydratedEntry): Entry {
   };
 }
 
+export interface RawHydratedCuratedWork {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle?: string;
+  workType: 'Essay' | 'Photography' | 'Visual Work' | 'Mixed Media' | 'Spatial Study';
+  year: string;
+  date: string;
+  featuredOnHome: boolean;
+  homeLayoutWeight: 'dominant' | 'standard' | 'editorial-compact' | 'horizontal-wide';
+  coverImage: string;
+  excerpt: string;
+  bodyBlocks: CuratedWorkBlock[];
+  metadata?: {
+    medium?: string;
+    dimensions?: string;
+    edition?: string;
+    location?: string;
+    readingTime?: string;
+  };
+  relatedStudyIds?: string[];
+  relatedEntryIds?: string[];
+  visibility: 'published' | 'draft' | 'hidden';
+  order?: number;
+}
+
+export function mapRawToCuratedWork(raw: RawHydratedCuratedWork): CuratedWork {
+  return {
+    id: raw.id,
+    slug: raw.slug,
+    title: raw.title,
+    subtitle: raw.subtitle || undefined,
+    workType: raw.workType || 'Essay',
+    year: raw.year,
+    date: raw.date,
+    featuredOnHome: Boolean(raw.featuredOnHome),
+    homeLayoutWeight: raw.homeLayoutWeight || 'standard',
+    coverImage: raw.coverImage || '',
+    excerpt: raw.excerpt || '',
+    bodyBlocks: raw.bodyBlocks || [],
+    metadata: raw.metadata || {},
+    relatedStudyIds: raw.relatedStudyIds || [],
+    relatedEntryIds: raw.relatedEntryIds || [],
+    visibility: raw.visibility || 'published',
+  };
+}
+
+// Safe response parser that prevents SyntaxError when server returns HTML fallback
+async function parseApiResponse<T>(res: Response, fallbackError: string): Promise<ApiResponse<T>> {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`API returned non-JSON response (${res.status} ${res.statusText}). Endpoint may not be served in current environment.`);
+  }
+  const json: ApiResponse<T> = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || fallbackError);
+  }
+  return json;
+}
+
 export const api = {
   /**
-   * Fetch complete aggregate archive (Collections, Studies, Threads, Entries) from D1
+   * Fetch complete aggregate archive (Collections, Studies, Threads, Entries, Curated Works) from D1
    */
   async getArchive(): Promise<{
     collections: Collection[];
     studies: Study[];
     threads: Thread[];
     entries: Entry[];
+    curatedWorks: CuratedWork[];
   } | null> {
     try {
       const res = await fetch('/api/archive', {
         headers: { Accept: 'application/json' },
       });
       if (!res.ok) return null;
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) return null;
+
       const json: ApiResponse<{
         collections: RawCollectionRecord[];
         studies: RawStudyRecord[];
         threads: RawThreadRecord[];
         entries: RawHydratedEntry[];
+        curatedWorks: RawHydratedCuratedWork[];
       }> = await res.json();
       if (!json.success || !json.data) return null;
 
@@ -154,6 +219,7 @@ export const api = {
         studies: (json.data.studies || []).map(mapRecordToStudy),
         threads: (json.data.threads || []).map(mapRawToThread),
         entries: (json.data.entries || []).map(mapRawToEntry),
+        curatedWorks: (json.data.curatedWorks || []).map(mapRawToCuratedWork),
       };
     } catch {
       return null;
@@ -163,10 +229,8 @@ export const api = {
   // Collections CRUD
   async getCollections(): Promise<Collection[]> {
     const res = await fetch('/api/collections');
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    const json: ApiResponse<RawCollectionRecord[]> = await res.json();
-    if (!json.success || !json.data) throw new Error(json.error || 'Failed to fetch collections');
-    return json.data.map(mapRecordToCollection);
+    const json = await parseApiResponse<RawCollectionRecord[]>(res, 'Failed to fetch collections');
+    return (json.data || []).map(mapRecordToCollection);
   },
 
   async updateCollection(id: string, updates: Partial<Collection>): Promise<Collection> {
@@ -185,11 +249,8 @@ export const api = {
       body: JSON.stringify(payload),
     });
 
-    const json: ApiResponse<RawCollectionRecord> = await res.json();
-    if (!res.ok || !json.success || !json.data) {
-      throw new Error(json.error || 'Failed to update collection');
-    }
-    return mapRecordToCollection(json.data);
+    const json = await parseApiResponse<RawCollectionRecord>(res, 'Failed to update collection');
+    return mapRecordToCollection(json.data!);
   },
 
   async createCollection(collection: Partial<Collection>): Promise<Collection> {
@@ -210,30 +271,22 @@ export const api = {
       body: JSON.stringify(payload),
     });
 
-    const json: ApiResponse<RawCollectionRecord> = await res.json();
-    if (!res.ok || !json.success || !json.data) {
-      throw new Error(json.error || 'Failed to create collection');
-    }
-    return mapRecordToCollection(json.data);
+    const json = await parseApiResponse<RawCollectionRecord>(res, 'Failed to create collection');
+    return mapRecordToCollection(json.data!);
   },
 
   async deleteCollection(id: string): Promise<void> {
     const res = await fetch(`/api/collections/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    const json: ApiResponse<unknown> = await res.json();
-    if (!res.ok || !json.success) {
-      throw new Error(json.error || 'Failed to delete collection');
-    }
+    await parseApiResponse<unknown>(res, 'Failed to delete collection');
   },
 
   // Studies CRUD
   async getStudies(): Promise<Study[]> {
     const res = await fetch('/api/studies');
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    const json: ApiResponse<RawStudyRecord[]> = await res.json();
-    if (!json.success || !json.data) throw new Error(json.error || 'Failed to fetch studies');
-    return json.data.map(mapRecordToStudy);
+    const json = await parseApiResponse<RawStudyRecord[]>(res, 'Failed to fetch studies');
+    return (json.data || []).map(mapRecordToStudy);
   },
 
   async updateStudy(id: string, updates: Partial<Study>): Promise<Study> {
@@ -252,11 +305,8 @@ export const api = {
       body: JSON.stringify(payload),
     });
 
-    const json: ApiResponse<RawStudyRecord> = await res.json();
-    if (!res.ok || !json.success || !json.data) {
-      throw new Error(json.error || 'Failed to update study');
-    }
-    return mapRecordToStudy(json.data);
+    const json = await parseApiResponse<RawStudyRecord>(res, 'Failed to update study');
+    return mapRecordToStudy(json.data!);
   },
 
   async createStudy(study: Partial<Study>): Promise<Study> {
@@ -277,30 +327,22 @@ export const api = {
       body: JSON.stringify(payload),
     });
 
-    const json: ApiResponse<RawStudyRecord> = await res.json();
-    if (!res.ok || !json.success || !json.data) {
-      throw new Error(json.error || 'Failed to create study');
-    }
-    return mapRecordToStudy(json.data);
+    const json = await parseApiResponse<RawStudyRecord>(res, 'Failed to create study');
+    return mapRecordToStudy(json.data!);
   },
 
   async deleteStudy(id: string): Promise<void> {
     const res = await fetch(`/api/studies/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    const json: ApiResponse<unknown> = await res.json();
-    if (!res.ok || !json.success) {
-      throw new Error(json.error || 'Failed to delete study');
-    }
+    await parseApiResponse<unknown>(res, 'Failed to delete study');
   },
 
   // Threads CRUD
   async getThreads(): Promise<Thread[]> {
     const res = await fetch('/api/threads');
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    const json: ApiResponse<RawThreadRecord[]> = await res.json();
-    if (!json.success || !json.data) throw new Error(json.error || 'Failed to fetch threads');
-    return json.data.map(mapRawToThread);
+    const json = await parseApiResponse<RawThreadRecord[]>(res, 'Failed to fetch threads');
+    return (json.data || []).map(mapRawToThread);
   },
 
   async createThread(thread: Partial<Thread>): Promise<Thread> {
@@ -309,11 +351,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(thread),
     });
-    const json: ApiResponse<RawThreadRecord> = await res.json();
-    if (!res.ok || !json.success || !json.data) {
-      throw new Error(json.error || 'Failed to create thread');
-    }
-    return mapRawToThread(json.data);
+    const json = await parseApiResponse<RawThreadRecord>(res, 'Failed to create thread');
+    return mapRawToThread(json.data!);
   },
 
   async updateThread(id: string, updates: Partial<Thread>): Promise<Thread> {
@@ -322,21 +361,15 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
-    const json: ApiResponse<RawThreadRecord> = await res.json();
-    if (!res.ok || !json.success || !json.data) {
-      throw new Error(json.error || 'Failed to update thread');
-    }
-    return mapRawToThread(json.data);
+    const json = await parseApiResponse<RawThreadRecord>(res, 'Failed to update thread');
+    return mapRawToThread(json.data!);
   },
 
   async deleteThread(id: string): Promise<void> {
     const res = await fetch(`/api/threads/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    const json: ApiResponse<unknown> = await res.json();
-    if (!res.ok || !json.success) {
-      throw new Error(json.error || 'Failed to delete thread');
-    }
+    await parseApiResponse<unknown>(res, 'Failed to delete thread');
   },
 
   // Entries CRUD
@@ -354,18 +387,14 @@ export const api = {
 
     const qs = searchParams.toString();
     const res = await fetch(`/api/entries${qs ? '?' + qs : ''}`);
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    const json: ApiResponse<RawHydratedEntry[]> = await res.json();
-    if (!json.success || !json.data) throw new Error(json.error || 'Failed to fetch entries');
-    return json.data.map(mapRawToEntry);
+    const json = await parseApiResponse<RawHydratedEntry[]>(res, 'Failed to fetch entries');
+    return (json.data || []).map(mapRawToEntry);
   },
 
   async getEntry(idOrSlug: string): Promise<Entry> {
     const res = await fetch(`/api/entries/${encodeURIComponent(idOrSlug)}`);
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    const json: ApiResponse<RawHydratedEntry> = await res.json();
-    if (!json.success || !json.data) throw new Error(json.error || 'Entry not found');
-    return mapRawToEntry(json.data);
+    const json = await parseApiResponse<RawHydratedEntry>(res, 'Entry not found');
+    return mapRawToEntry(json.data!);
   },
 
   async createEntry(entry: Partial<Entry>): Promise<Entry> {
@@ -374,11 +403,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(entry),
     });
-    const json: ApiResponse<RawHydratedEntry> = await res.json();
-    if (!res.ok || !json.success || !json.data) {
-      throw new Error(json.error || 'Failed to create entry');
-    }
-    return mapRawToEntry(json.data);
+    const json = await parseApiResponse<RawHydratedEntry>(res, 'Failed to create entry');
+    return mapRawToEntry(json.data!);
   },
 
   async updateEntry(id: string, updates: Partial<Entry>): Promise<Entry> {
@@ -387,20 +413,62 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
-    const json: ApiResponse<RawHydratedEntry> = await res.json();
-    if (!res.ok || !json.success || !json.data) {
-      throw new Error(json.error || 'Failed to update entry');
-    }
-    return mapRawToEntry(json.data);
+    const json = await parseApiResponse<RawHydratedEntry>(res, 'Failed to update entry');
+    return mapRawToEntry(json.data!);
   },
 
   async deleteEntry(id: string): Promise<void> {
     const res = await fetch(`/api/entries/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    const json: ApiResponse<unknown> = await res.json();
-    if (!res.ok || !json.success) {
-      throw new Error(json.error || 'Failed to delete entry');
-    }
+    await parseApiResponse<unknown>(res, 'Failed to delete entry');
+  },
+
+  // Curated Works CRUD
+  async getWorks(params?: {
+    featured?: boolean;
+    visibility?: string;
+  }): Promise<CuratedWork[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.featured !== undefined) searchParams.set('featured', String(params.featured));
+    if (params?.visibility) searchParams.set('visibility', params.visibility);
+
+    const qs = searchParams.toString();
+    const res = await fetch(`/api/works${qs ? '?' + qs : ''}`);
+    const json = await parseApiResponse<RawHydratedCuratedWork[]>(res, 'Failed to fetch curated works');
+    return (json.data || []).map(mapRawToCuratedWork);
+  },
+
+  async getWork(idOrSlug: string): Promise<CuratedWork> {
+    const res = await fetch(`/api/works/${encodeURIComponent(idOrSlug)}`);
+    const json = await parseApiResponse<RawHydratedCuratedWork>(res, 'Curated work not found');
+    return mapRawToCuratedWork(json.data!);
+  },
+
+  async createWork(work: Partial<CuratedWork>): Promise<CuratedWork> {
+    const res = await fetch('/api/works', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(work),
+    });
+    const json = await parseApiResponse<RawHydratedCuratedWork>(res, 'Failed to create curated work');
+    return mapRawToCuratedWork(json.data!);
+  },
+
+  async updateWork(id: string, updates: Partial<CuratedWork>): Promise<CuratedWork> {
+    const res = await fetch(`/api/works/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    const json = await parseApiResponse<RawHydratedCuratedWork>(res, 'Failed to update curated work');
+    return mapRawToCuratedWork(json.data!);
+  },
+
+  async deleteWork(id: string): Promise<void> {
+    const res = await fetch(`/api/works/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    await parseApiResponse<unknown>(res, 'Failed to delete curated work');
   },
 };

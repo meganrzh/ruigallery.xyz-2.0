@@ -17,6 +17,7 @@ import {
   Download,
   Upload,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Entry,
@@ -29,6 +30,8 @@ import {
   RuiRevision,
 } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { CuratedWorkEditor } from './CuratedWorkEditor';
+import { CuratedWorkReaderPreview } from './CuratedWorkReaderPreview';
 
 interface AdminDashboardProps {
   onNavigate: (view: AppView) => void;
@@ -78,6 +81,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   // Preview Modal
   const [previewEntry, setPreviewEntry] = useState<Entry | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Curated Work Editing & Reader Preview State
+  const [editingCuratedWork, setEditingCuratedWork] = useState<CuratedWork | null>(null);
+  const [previewingCuratedWork, setPreviewingCuratedWork] = useState<CuratedWork | null>(null);
 
   // New Collection Form State
   const [newColTitle, setNewColTitle] = useState('');
@@ -266,7 +274,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       setEntryBlocks([{ type: 'paragraph', content: '' }]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error publishing entry';
-      alert(`Failed to publish entry: ${msg}`);
+      setErrorMessage(`Failed to publish entry to persistent store: ${msg}`);
     }
   };
 
@@ -329,7 +337,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error creating thread';
-      alert(`Failed to create thread: ${msg}`);
+      setErrorMessage(`Failed to create thread: ${msg}`);
     }
   };
 
@@ -423,6 +431,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
           </div>
         )}
 
+        {/* Error Alert Banner */}
+        {errorMessage && (
+          <div className="p-4 bg-red-950/20 border border-red-800 text-red-200 text-xs font-mono-archival flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+            <button onClick={() => setErrorMessage(null)} className="p-1 hover:text-white">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Navigation Sub-Tabs */}
         <div className="flex flex-wrap gap-2 border-b border-[#E5E3DB] pb-3 text-xs font-mono-archival">
           <button
@@ -459,6 +480,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
           >
             <Layers className="w-3.5 h-3.5" />
             <span>Curated Works ({curatedWorks.length})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setEditingCuratedWork(null);
+              setActiveTab('new-work');
+            }}
+            className={`px-3 py-1.5 border transition-colors flex items-center space-x-1.5 ${
+              activeTab === 'new-work'
+                ? 'bg-[#9E2A2B] text-[#FBFBFA] border-[#9E2A2B] font-medium'
+                : 'bg-[#9E2A2B]/10 text-[#9E2A2B] border-[#9E2A2B]/30 hover:bg-[#9E2A2B]/20'
+            }`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Author New Work</span>
           </button>
 
           <button
@@ -536,9 +572,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                         const newVis = entry.visibility === 'published' ? 'draft' : 'published';
                         try {
                           await updateEntry(entry.id, { visibility: newVis });
+                          setSuccessMessage(`Entry visibility updated to ${newVis}.`);
+                          setTimeout(() => setSuccessMessage(null), 3000);
                         } catch (err: unknown) {
                           const msg = err instanceof Error ? err.message : 'Error updating entry';
-                          alert(`Failed to update entry: ${msg}`);
+                          setErrorMessage(`Failed to update entry visibility: ${msg}`);
                         }
                       }}
                       className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#6E6E66]"
@@ -550,9 +588,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                         if (confirm(`Delete entry "${entry.title}"?`)) {
                           try {
                             await deleteEntry(entry.id);
+                            setSuccessMessage(`Entry "${entry.title}" deleted.`);
+                            setTimeout(() => setSuccessMessage(null), 3000);
                           } catch (err: unknown) {
                             const msg = err instanceof Error ? err.message : 'Error deleting entry';
-                            alert(`Failed to delete entry: ${msg}`);
+                            setErrorMessage(`Failed to delete entry: ${msg}`);
                           }
                         }
                       }}
@@ -931,66 +971,209 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         {/* Tab 3: Curated Works Management */}
         {activeTab === 'work' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="font-serif text-xl text-[#141413] font-medium">
-                Curated Works Management
-              </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="font-serif text-xl text-[#141413] font-medium">
+                  Curated Works Editorial Management ({curatedWorks.length})
+                </h2>
+                <p className="text-xs font-mono-archival text-[#8C8C82] mt-0.5">
+                  Long-form visual essays and portfolio projects persisted to Cloudflare D1.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setEditingCuratedWork(null);
+                  setActiveTab('new-work');
+                }}
+                className="px-4 py-2 bg-[#9E2A2B] text-[#FBFBFA] hover:bg-[#801C1D] text-xs font-mono-archival flex items-center space-x-1.5 transition-colors self-start sm:self-auto"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Author New Curated Work</span>
+              </button>
             </div>
 
             <div className="border border-[#E5E3DB] bg-[#FBFBFA] divide-y divide-[#E5E3DB]">
-              {curatedWorks.map((work) => (
-                <div
-                  key={work.id}
-                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[#F4F3EE]"
-                >
-                  <div className="flex items-center space-x-4">
-                    <img
-                      src={work.coverImage}
-                      alt={work.title}
-                      className="w-16 h-16 object-cover border border-[#E5E3DB]"
-                    />
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82]">
-                        <span className="text-[#9E2A2B] font-medium">{work.workType}</span>
-                        <span>•</span>
-                        <span>{work.year}</span>
-                        {work.featuredOnHome && (
-                          <span className="px-1 py-0.2 bg-[#141413] text-[#FBFBFA] text-[10px]">
-                            FEATURED ON HOME
+              {curatedWorks.length === 0 ? (
+                <div className="p-8 text-center text-xs font-mono-archival text-[#8C8C82]">
+                  No curated works currently in D1 archive.
+                </div>
+              ) : (
+                curatedWorks.map((work) => (
+                  <div
+                    key={work.id}
+                    className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-[#F4F3EE] transition-colors"
+                  >
+                    <div className="flex items-start space-x-4">
+                      <img
+                        src={work.coverImage}
+                        alt={work.title}
+                        className="w-20 h-20 object-cover border border-[#E5E3DB] shrink-0 bg-[#EAE8E0]"
+                      />
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival text-[#8C8C82]">
+                          <span className="text-[#9E2A2B] font-semibold">{work.workType}</span>
+                          <span>•</span>
+                          <span>{work.year}</span>
+                          {work.date && (
+                            <>
+                              <span>•</span>
+                              <span>{work.date}</span>
+                            </>
+                          )}
+                          <span
+                            className={`px-1.5 py-0.2 text-[10px] ${
+                              work.visibility === 'published'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : work.visibility === 'draft'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-gray-200 text-gray-700'
+                            }`}
+                          >
+                            {work.visibility.toUpperCase()}
                           </span>
+                          <span className="px-1.5 py-0.2 bg-[#EAE8E0] text-[#141413] text-[10px]">
+                            {work.homeLayoutWeight.toUpperCase()}
+                          </span>
+                          {work.featuredOnHome && (
+                            <span className="px-1.5 py-0.2 bg-[#141413] text-[#FBFBFA] text-[10px] font-medium">
+                              FEATURED ON HOME
+                            </span>
+                          )}
+                        </div>
+
+                        <h3 className="font-serif text-lg text-[#141413] font-medium">
+                          {work.title}
+                        </h3>
+
+                        {work.subtitle && (
+                          <p className="font-serif text-xs text-[#6E6E66] italic">
+                            {work.subtitle}
+                          </p>
                         )}
-                      </div>
-                      <h3 className="font-serif text-lg text-[#141413] font-medium">
-                        {work.title}
-                      </h3>
-                      {work.subtitle && (
-                        <p className="font-serif text-xs text-[#6E6E66] italic">
-                          {work.subtitle}
+
+                        <p className="font-serif text-xs text-[#5C5C54] line-clamp-2 max-w-2xl">
+                          {work.excerpt}
                         </p>
-                      )}
+
+                        <div className="flex items-center gap-3 text-[11px] font-mono-archival text-[#8C8C82] pt-1">
+                          <span>{work.bodyBlocks?.length || 0} Body Blocks</span>
+                          <span>•</span>
+                          <span>{work.relatedStudyIds?.length || 0} Studies</span>
+                          <span>•</span>
+                          <span>{work.relatedEntryIds?.length || 0} Entries</span>
+                          <span>•</span>
+                          <span>slug: /{work.slug}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival shrink-0 pt-2 lg:pt-0">
+                      <button
+                        onClick={() => setPreviewingCuratedWork(work)}
+                        className="px-2.5 py-1 bg-white border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1"
+                        title="Open Reader Preview Modal"
+                      >
+                        <Eye className="w-3 h-3 text-[#9E2A2B]" />
+                        <span>Reader Preview</span>
+                      </button>
+
+                      <button
+                        onClick={() => onNavigate({ page: 'work', slug: work.slug })}
+                        className="px-2.5 py-1 bg-white border border-[#E5E3DB] hover:border-[#141413] text-[#6E6E66]"
+                        title="Open Live Public Work Page"
+                      >
+                        Live Page
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          try {
+                            await updateCuratedWork(work.id, { featuredOnHome: !work.featuredOnHome });
+                            setSuccessMessage(
+                              `Curated work "${work.title}" ${!work.featuredOnHome ? 'featured on' : 'removed from'} Home.`
+                            );
+                            setTimeout(() => setSuccessMessage(null), 3000);
+                          } catch (err: unknown) {
+                            const msg = err instanceof Error ? err.message : 'Error updating home feature';
+                            setErrorMessage(`Failed to update homepage status: ${msg}`);
+                          }
+                        }}
+                        className={`px-2.5 py-1 border text-xs transition-colors ${
+                          work.featuredOnHome
+                            ? 'bg-[#141413] text-[#FBFBFA] border-[#141413]'
+                            : 'bg-white text-[#6E6E66] border-[#E5E3DB] hover:border-[#141413]'
+                        }`}
+                      >
+                        {work.featuredOnHome ? 'Featured' : 'Feature on Home'}
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setEditingCuratedWork(work);
+                          setActiveTab('new-work');
+                        }}
+                        className="px-2.5 py-1 bg-white border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          if (confirm(`Delete curated work "${work.title}"? This cannot be undone.`)) {
+                            try {
+                              await deleteCuratedWork(work.id);
+                              setSuccessMessage(`Curated work "${work.title}" deleted.`);
+                              setTimeout(() => setSuccessMessage(null), 3000);
+                            } catch (err: unknown) {
+                              const msg = err instanceof Error ? err.message : 'Error deleting curated work';
+                              setErrorMessage(`Failed to delete curated work: ${msg}`);
+                            }
+                          }
+                        }}
+                        className="p-1 text-[#8C8C82] hover:text-red-700"
+                        title="Delete Work"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-
-                  <div className="flex items-center space-x-2 text-xs font-mono-archival shrink-0">
-                    <button
-                      onClick={() => onNavigate({ page: 'work', slug: work.slug })}
-                      className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
-                    >
-                      View Page
-                    </button>
-                    <button
-                      onClick={() => {
-                        updateCuratedWork(work.id, { featuredOnHome: !work.featuredOnHome });
-                      }}
-                      className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] text-[#6E6E66]"
-                    >
-                      {work.featuredOnHome ? 'Unfeature from Home' : 'Feature on Home'}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
+        )}
+
+        {/* Tab 3.5: Author / Edit Curated Work */}
+        {activeTab === 'new-work' && (
+          <CuratedWorkEditor
+            initialWork={editingCuratedWork}
+            studies={studies}
+            entries={entries}
+            onSave={async (workData, existingId) => {
+              try {
+                if (existingId) {
+                  await updateCuratedWork(existingId, workData);
+                  setSuccessMessage(`Curated work "${workData.title}" updated successfully in D1!`);
+                } else {
+                  await addCuratedWork(workData);
+                  setSuccessMessage(`Curated work "${workData.title}" published successfully to D1!`);
+                }
+                setTimeout(() => setSuccessMessage(null), 4000);
+                setEditingCuratedWork(null);
+                setActiveTab('work');
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : 'Persistent mutation failed';
+                setErrorMessage(`Failed to save curated work to D1: ${msg}`);
+                throw err;
+              }
+            }}
+            onCancel={() => {
+              setEditingCuratedWork(null);
+              setActiveTab('work');
+            }}
+          />
         )}
 
         {/* Tab 4: Collections & Studies */}
@@ -1363,9 +1546,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                             if (confirm(`Delete thread "${thread.name}"?`)) {
                               try {
                                 await deleteThread(thread.id);
+                                setSuccessMessage(`Thread "${thread.name}" deleted.`);
+                                setTimeout(() => setSuccessMessage(null), 3000);
                               } catch (err: unknown) {
                                 const msg = err instanceof Error ? err.message : 'Error deleting thread';
-                                alert(`Failed to delete thread: ${msg}`);
+                                setErrorMessage(`Failed to delete thread: ${msg}`);
                               }
                             }
                           }}
@@ -1400,6 +1585,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
           </button>
         </div>
       </div>
+
+      {/* Reader Preview Modal for Curated Works */}
+      {previewingCuratedWork && (
+        <CuratedWorkReaderPreview
+          work={previewingCuratedWork}
+          relatedStudies={studies.filter((s) => previewingCuratedWork.relatedStudyIds?.includes(s.id))}
+          relatedEntries={entries.filter((e) => previewingCuratedWork.relatedEntryIds?.includes(e.id))}
+          onClose={() => setPreviewingCuratedWork(null)}
+        />
+      )}
     </div>
   );
 };
