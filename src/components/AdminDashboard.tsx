@@ -1148,6 +1148,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         {/* Tab 3.5: Author / Edit Curated Work */}
         {activeTab === 'new-work' && (
           <CuratedWorkEditor
+            key={editingCuratedWork?.id || 'new-work'}
             initialWork={editingCuratedWork}
             studies={studies}
             entries={entries}

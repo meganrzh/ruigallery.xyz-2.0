@@ -358,7 +358,12 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setCuratedWorks((prev) =>
         prev.map((w) => {
           if (w.id === id) {
-            localUpdated = { ...w, ...updates };
+            localUpdated = {
+              ...w,
+              ...updates,
+              coverImageCaption: updates.coverImageCaption ? updates.coverImageCaption.trim() : undefined,
+              coverImageAlt: updates.coverImageAlt ? updates.coverImageAlt.trim() : undefined,
+            };
             return localUpdated;
           }
           return w;

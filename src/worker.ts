@@ -241,6 +241,28 @@ function hydrateCuratedWork(
   };
 }
 
+/**
+ * Normalizes optional/nullable text inputs across Worker and D1 boundaries.
+ * Enforces explicit semantics:
+ * 1. undefined: omitted field -> returns existingValue on PUT (isUpdate=true), or null on POST.
+ * 2. null or empty string ("" / whitespace): author cleared field -> returns SQL null.
+ * 3. non-empty text: trimmed text -> returns trimmed text.
+ */
+function normalizeNullableText(
+  value: unknown,
+  existingValue: string | null = null,
+  isUpdate: boolean = false
+): string | null {
+  if (value === undefined) {
+    return isUpdate ? (existingValue ?? null) : null;
+  }
+  if (value === null) {
+    return null;
+  }
+  const trimmed = String(value).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -1291,15 +1313,15 @@ export default {
           const id = ((body.id as string) || `work-${Date.now()}`).trim();
           const slug = body.slug.trim().toLowerCase();
           const title = (body.title as string).trim();
-          const subtitle = (body.subtitle ? String(body.subtitle).trim() : null) ?? null;
+          const subtitle = normalizeNullableText(body.subtitle);
           const workType = String(body.workType || 'Essay');
           const year = String(body.year || new Date().getFullYear().toString());
           const date = String(body.date || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
           const featuredOnHome = body.featuredOnHome ? 1 : 0;
           const homeLayoutWeight = String(body.homeLayoutWeight || 'standard');
           const coverImage = String(body.coverImage || '');
-          const coverImageCaption = (body.coverImageCaption ? String(body.coverImageCaption).trim() : null) ?? null;
-          const coverImageAlt = (body.coverImageAlt ? String(body.coverImageAlt).trim() : null) ?? null;
+          const coverImageCaption = normalizeNullableText(body.coverImageCaption);
+          const coverImageAlt = normalizeNullableText(body.coverImageAlt);
           const excerpt = String(body.excerpt || '');
           const bodyBlocks = JSON.stringify(Array.isArray(body.bodyBlocks) ? body.bodyBlocks : []);
           const metadata = JSON.stringify(body.metadata && typeof body.metadata === 'object' && body.metadata !== null ? body.metadata : {});
@@ -1449,9 +1471,7 @@ export default {
             ? String(body.title).trim()
             : existing.title) ?? '';
 
-          const subtitle = (body.subtitle !== undefined
-            ? (body.subtitle ? String(body.subtitle).trim() : null)
-            : (existing.subtitle ?? null)) ?? null;
+          const subtitle = normalizeNullableText(body.subtitle, existing.subtitle ?? null, true);
 
           const workType = (body.workType !== undefined && body.workType !== null
             ? String(body.workType)
@@ -1477,13 +1497,9 @@ export default {
             ? String(body.coverImage)
             : existing.cover_image) ?? '';
 
-          const coverImageCaption = (body.coverImageCaption !== undefined
-            ? (body.coverImageCaption ? String(body.coverImageCaption).trim() : null)
-            : (existing.cover_image_caption ?? null)) ?? null;
+          const coverImageCaption = normalizeNullableText(body.coverImageCaption, existing.cover_image_caption ?? null, true);
 
-          const coverImageAlt = (body.coverImageAlt !== undefined
-            ? (body.coverImageAlt ? String(body.coverImageAlt).trim() : null)
-            : (existing.cover_image_alt ?? null)) ?? null;
+          const coverImageAlt = normalizeNullableText(body.coverImageAlt, existing.cover_image_alt ?? null, true);
 
           const excerpt = (body.excerpt !== undefined && body.excerpt !== null
             ? String(body.excerpt)
