@@ -56,6 +56,8 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
     initialWork?.homeLayoutWeight || 'standard'
   );
   const [coverImage, setCoverImage] = useState(initialWork?.coverImage || '');
+  const [coverImageCaption, setCoverImageCaption] = useState(initialWork?.coverImageCaption || '');
+  const [coverImageAlt, setCoverImageAlt] = useState(initialWork?.coverImageAlt || '');
   const [excerpt, setExcerpt] = useState(initialWork?.excerpt || '');
   const [visibility, setVisibility] = useState<CuratedWork['visibility']>(initialWork?.visibility || 'published');
 
@@ -165,6 +167,8 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
     featuredOnHome,
     homeLayoutWeight,
     coverImage: coverImage.trim(),
+    coverImageCaption: coverImageCaption.trim() || undefined,
+    coverImageAlt: coverImageAlt.trim() || undefined,
     excerpt: excerpt.trim(),
     bodyBlocks,
     metadata: {
@@ -213,6 +217,8 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
           featuredOnHome,
           homeLayoutWeight,
           coverImage: coverImage.trim(),
+          coverImageCaption: coverImageCaption.trim() || undefined,
+          coverImageAlt: coverImageAlt.trim() || undefined,
           excerpt: excerpt.trim(),
           bodyBlocks,
           metadata: {
@@ -421,6 +427,40 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
                     className="w-10 h-10 object-cover border border-[#E5E3DB] shrink-0"
                   />
                 )}
+              </div>
+            </div>
+
+            {/* Cover Image Metadata: Caption & Alt Text */}
+            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                  Cover Image Caption (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={coverImageCaption}
+                  onChange={(e) => setCoverImageCaption(e.target.value)}
+                  placeholder="Editorial caption displayed beneath the primary plate in reader view"
+                  className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413] text-sm"
+                />
+                <span className="block text-[10px] font-mono-archival text-[#8C8C82] mt-1">
+                  Appears beneath the primary plate in reader view
+                </span>
+              </div>
+              <div>
+                <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                  Cover Image Alt Text (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={coverImageAlt}
+                  onChange={(e) => setCoverImageAlt(e.target.value)}
+                  placeholder="Descriptive text for accessibility and screen readers"
+                  className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413] text-sm"
+                />
+                <span className="block text-[10px] font-mono-archival text-[#8C8C82] mt-1">
+                  Screen reader accessibility description
+                </span>
               </div>
             </div>
 

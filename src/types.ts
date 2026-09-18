@@ -112,6 +112,8 @@ export interface CuratedWork {
   featuredOnHome: boolean;
   homeLayoutWeight: 'dominant' | 'standard' | 'editorial-compact' | 'horizontal-wide';
   coverImage: string;
+  coverImageCaption?: string;
+  coverImageAlt?: string;
   excerpt: string;
   bodyBlocks: CuratedWorkBlock[];
   relatedStudyIds?: string[];

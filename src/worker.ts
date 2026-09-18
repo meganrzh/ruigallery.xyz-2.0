@@ -112,6 +112,8 @@ export interface CuratedWorkRecord {
   featured_on_home: number;
   home_layout_weight: string;
   cover_image: string;
+  cover_image_caption: string | null;
+  cover_image_alt: string | null;
   excerpt: string;
   body_blocks: string;
   metadata: string | null;
@@ -225,6 +227,8 @@ function hydrateCuratedWork(
     featuredOnHome: Boolean(work.featured_on_home),
     homeLayoutWeight: work.home_layout_weight,
     coverImage: work.cover_image,
+    coverImageCaption: work.cover_image_caption || undefined,
+    coverImageAlt: work.cover_image_alt || undefined,
     excerpt: work.excerpt,
     bodyBlocks,
     metadata,
@@ -1294,6 +1298,8 @@ export default {
           const featuredOnHome = body.featuredOnHome ? 1 : 0;
           const homeLayoutWeight = String(body.homeLayoutWeight || 'standard');
           const coverImage = String(body.coverImage || '');
+          const coverImageCaption = body.coverImageCaption ? String(body.coverImageCaption).trim() : null;
+          const coverImageAlt = body.coverImageAlt ? String(body.coverImageAlt).trim() : null;
           const excerpt = String(body.excerpt || '');
           const bodyBlocks = JSON.stringify(Array.isArray(body.bodyBlocks) ? body.bodyBlocks : []);
           const metadata = JSON.stringify(body.metadata && typeof body.metadata === 'object' ? body.metadata : {});
@@ -1314,8 +1320,8 @@ export default {
             env.DB.prepare(
               `INSERT INTO curated_works (
                 id, slug, title, subtitle, work_type, year, date, featured_on_home,
-                home_layout_weight, cover_image, excerpt, body_blocks, metadata, visibility, order_index, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                home_layout_weight, cover_image, cover_image_caption, cover_image_alt, excerpt, body_blocks, metadata, visibility, order_index, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).bind(
               id,
               slug,
@@ -1327,6 +1333,8 @@ export default {
               featuredOnHome,
               homeLayoutWeight,
               coverImage,
+              coverImageCaption,
+              coverImageAlt,
               excerpt,
               bodyBlocks,
               metadata,
@@ -1442,6 +1450,8 @@ export default {
           const featuredOnHome = body.featuredOnHome !== undefined ? (body.featuredOnHome ? 1 : 0) : existing.featured_on_home;
           const homeLayoutWeight = body.homeLayoutWeight !== undefined ? String(body.homeLayoutWeight) : existing.home_layout_weight;
           const coverImage = body.coverImage !== undefined ? String(body.coverImage) : existing.cover_image;
+          const coverImageCaption = body.coverImageCaption !== undefined ? (body.coverImageCaption ? String(body.coverImageCaption).trim() : null) : existing.cover_image_caption;
+          const coverImageAlt = body.coverImageAlt !== undefined ? (body.coverImageAlt ? String(body.coverImageAlt).trim() : null) : existing.cover_image_alt;
           const excerpt = body.excerpt !== undefined ? String(body.excerpt) : existing.excerpt;
           const bodyBlocks = body.bodyBlocks !== undefined ? JSON.stringify(body.bodyBlocks) : existing.body_blocks;
           const metadata = body.metadata !== undefined ? JSON.stringify(body.metadata) : existing.metadata;
@@ -1452,7 +1462,7 @@ export default {
             env.DB.prepare(
               `UPDATE curated_works SET
                 slug = ?, title = ?, subtitle = ?, work_type = ?, year = ?, date = ?,
-                featured_on_home = ?, home_layout_weight = ?, cover_image = ?, excerpt = ?,
+                featured_on_home = ?, home_layout_weight = ?, cover_image = ?, cover_image_caption = ?, cover_image_alt = ?, excerpt = ?,
                 body_blocks = ?, metadata = ?, visibility = ?, order_index = ?, updated_at = ?
               WHERE id = ?`
             ).bind(
@@ -1465,6 +1475,8 @@ export default {
               featuredOnHome,
               homeLayoutWeight,
               coverImage,
+              coverImageCaption,
+              coverImageAlt,
               excerpt,
               bodyBlocks,
               metadata,

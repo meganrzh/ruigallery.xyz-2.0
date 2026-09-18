@@ -137,6 +137,8 @@ export interface RawHydratedCuratedWork {
   featuredOnHome: boolean;
   homeLayoutWeight: 'dominant' | 'standard' | 'editorial-compact' | 'horizontal-wide';
   coverImage: string;
+  coverImageCaption?: string;
+  coverImageAlt?: string;
   excerpt: string;
   bodyBlocks: CuratedWorkBlock[];
   metadata?: {
@@ -164,6 +166,8 @@ export function mapRawToCuratedWork(raw: RawHydratedCuratedWork): CuratedWork {
     featuredOnHome: Boolean(raw.featuredOnHome),
     homeLayoutWeight: raw.homeLayoutWeight || 'standard',
     coverImage: raw.coverImage || '',
+    coverImageCaption: raw.coverImageCaption || undefined,
+    coverImageAlt: raw.coverImageAlt || undefined,
     excerpt: raw.excerpt || '',
     bodyBlocks: raw.bodyBlocks || [],
     metadata: raw.metadata || {},

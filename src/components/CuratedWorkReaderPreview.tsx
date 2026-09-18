@@ -102,14 +102,16 @@ export const CuratedWorkReaderPreview: React.FC<CuratedWorkReaderPreviewProps> =
               <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-1">
                 <img
                   src={work.coverImage}
-                  alt={work.title}
+                  alt={work.coverImageAlt || work.title}
                   referrerPolicy="no-referrer"
                   className="w-full h-auto max-h-[600px] object-cover"
                 />
               </div>
-              <p className="text-xs font-mono-archival text-[#8C8C82] mt-2 text-right">
-                Plate I — Primary documentation capture for {work.title}.
-              </p>
+              {work.coverImageCaption && (
+                <p className="text-xs font-mono-archival text-[#8C8C82] mt-2 text-right">
+                  {work.coverImageCaption}
+                </p>
+              )}
             </div>
           )}
 

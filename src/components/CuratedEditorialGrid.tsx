@@ -46,7 +46,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
                 <div className="relative overflow-hidden bg-[#F4F3EE] border border-[#E5E3DB]">
                   <img
                     src={dominantWork.coverImage}
-                    alt={dominantWork.title}
+                    alt={dominantWork.coverImageAlt || dominantWork.title}
                     referrerPolicy="no-referrer"
                     className="w-full h-auto max-h-[640px] object-cover transition-transform duration-700 group-hover:scale-[1.01]"
                   />
@@ -135,7 +135,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
                 >
                   <img
                     src={work.coverImage}
-                    alt={work.title}
+                    alt={work.coverImageAlt || work.title}
                     referrerPolicy="no-referrer"
                     className="w-full h-64 sm:h-72 object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                   />
