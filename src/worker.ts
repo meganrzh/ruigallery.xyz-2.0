@@ -168,8 +168,8 @@ export function jsonResponse(data: unknown, status = 200, headers: Record<string
   });
 }
 
-export function errorResponse(message: string, status = 400): Response {
-  return jsonResponse({ error: message, success: false }, status);
+export function errorResponse(message: string, status = 400, extra?: Record<string, unknown>): Response {
+  return jsonResponse({ error: message, success: false, ...(extra || {}) }, status);
 }
 
 export function handleCorsOptions(): Response {
@@ -247,11 +247,16 @@ async function getAccessJwks(teamDomain: string): Promise<JwkKey[]> {
   return data.keys;
 }
 
-function extractAccessJwt(request: Request): string | null {
+interface ExtractedJwt {
+  token: string;
+  source: 'header' | 'cookie' | 'bearer';
+}
+
+function extractAccessJwt(request: Request): ExtractedJwt | null {
   // 1. Header: Cf-Access-Jwt-Assertion
   const headerJwt = request.headers.get('Cf-Access-Jwt-Assertion');
   if (headerJwt && headerJwt.trim()) {
-    return headerJwt.trim();
+    return { token: headerJwt.trim(), source: 'header' };
   }
 
   // 2. Cookie: CF_Authorization
@@ -262,7 +267,7 @@ function extractAccessJwt(request: Request): string | null {
       const [name, ...rest] = cookie.trim().split('=');
       if (name === 'CF_Authorization') {
         const val = rest.join('=');
-        if (val) return decodeURIComponent(val.trim());
+        if (val) return { token: decodeURIComponent(val.trim()), source: 'cookie' };
       }
     }
   }
@@ -271,7 +276,7 @@ function extractAccessJwt(request: Request): string | null {
   const authHeader = request.headers.get('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const val = authHeader.slice(7).trim();
-    if (val) return val;
+    if (val) return { token: val, source: 'bearer' };
   }
 
   return null;
@@ -296,10 +301,26 @@ interface JwtPayload {
   custom?: Record<string, unknown>;
 }
 
+export interface AdminAuthDiagnostic {
+  assertionHeaderPresent: boolean;
+  usedCookieFallback: boolean;
+  tokenAudienceCount: number;
+  configuredAudienceLength: number;
+  tokenAudienceLengths: number[];
+  configuredAudienceHasQuotes: boolean;
+  tokenAudiencesAreStrings: boolean;
+  issuerMatches: boolean;
+}
+
 export async function authenticateAdminRequest(
   request: Request,
   env: Env
-): Promise<{ authenticated: boolean; user?: { email?: string; sub?: string }; error?: string }> {
+): Promise<{
+  authenticated: boolean;
+  user?: { email?: string; sub?: string };
+  error?: string;
+  diagnostic?: AdminAuthDiagnostic;
+}> {
   // Developer bypass option for strictly local development/testing if explicitly enabled
   const isDevMode = env.ENVIRONMENT === 'development' || !env.ENVIRONMENT || env.ENVIRONMENT === 'preview';
   const allowBypass = env.ALLOW_DEV_ADMIN_BYPASS === 'true' || env.ALLOW_DEV_ADMIN_BYPASS === true;
@@ -322,13 +343,15 @@ export async function authenticateAdminRequest(
     };
   }
 
-  const token = extractAccessJwt(request);
-  if (!token) {
+  const extracted = extractAccessJwt(request);
+  if (!extracted) {
     return {
       authenticated: false,
       error: 'Missing Cloudflare Access assertion token',
     };
   }
+
+  const token = extracted.token;
 
   const parts = token.split('.');
   if (parts.length !== 3) {
@@ -366,9 +389,32 @@ export async function authenticateAdminRequest(
     // Validate AUD claim
     const payloadAuds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
     if (!payloadAuds.includes(aud)) {
+      const hasAssertionHeader = Boolean(request.headers.get('Cf-Access-Jwt-Assertion')?.trim());
+      const usedCookieFallback = !hasAssertionHeader && extracted.source === 'cookie';
+      const cleanDomain = teamDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+      const expectedIssuer = `https://${cleanDomain}`;
+
+      const rawAudList = Array.isArray(payload.aud)
+        ? payload.aud
+        : (payload.aud !== undefined && payload.aud !== null ? [payload.aud] : []);
+
       return {
         authenticated: false,
         error: 'JWT audience claim does not match configured CF_ACCESS_AUD',
+        diagnostic: {
+          assertionHeaderPresent: hasAssertionHeader,
+          usedCookieFallback,
+          tokenAudienceCount: rawAudList.length,
+          configuredAudienceLength: aud.length,
+          tokenAudienceLengths: rawAudList.map((item) =>
+            typeof item === 'string' ? item.length : String(item).length
+          ),
+          configuredAudienceHasQuotes: /^['"]|['"]$/.test(aud),
+          tokenAudiencesAreStrings: Array.isArray(payload.aud)
+            ? payload.aud.length > 0 && payload.aud.every((item) => typeof item === 'string')
+            : typeof payload.aud === 'string',
+          issuerMatches: payload.iss === expectedIssuer,
+        },
       };
     }
 
@@ -578,7 +624,11 @@ export default {
       if (pathname.startsWith('/api/admin/')) {
         const auth = await authenticateAdminRequest(request, env);
         if (!auth.authenticated) {
-          return errorResponse(`Unauthorized: ${auth.error || 'Authentication required'}`, 401);
+          return errorResponse(
+            `Unauthorized: ${auth.error || 'Authentication required'}`,
+            401,
+            auth.diagnostic ? { diagnostic: auth.diagnostic } : undefined
+          );
         }
 
         // Session status check endpoint for Admin UI hydration & Cloudflare Access redirect support
