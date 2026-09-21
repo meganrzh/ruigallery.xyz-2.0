@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { ArrowRight, ArrowLeft, FolderKanban, Tag, Layers, Database, CornerDownRight } from 'lucide-react';
-import { AppView, Thread, INITIAL_ENTRY_MEDIUMS } from '../types';
+import { ArrowRight, ArrowLeft, FolderKanban, Layers, Database, CornerDownRight } from 'lucide-react';
+import { AppView, INITIAL_ENTRY_MEDIUMS } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 
 interface LaboratoryViewProps {
@@ -27,12 +27,11 @@ const MEDIUM_METADATA: Record<string, { description: string; tag: string }> = {
   },
 };
 
-export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate, filterThreadId }) => {
+export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) => {
   const {
     collections,
     studies,
     entries,
-    threads,
     getCollection,
     getStudy,
     getThread,
@@ -40,7 +39,6 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate, filt
     getEntriesByStudy,
   } = useArchive();
 
-  const [selectedThread, setSelectedThread] = useState<string | null>(filterThreadId || null);
   const [selectedMedium, setSelectedMedium] = useState<string | null>(null);
 
   // All published entries
@@ -98,18 +96,17 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate, filt
       });
   }, [allPublishedEntries]);
 
-  // Entries within currently selected medium, respect thread filter
+  // Entries within currently selected medium
   const mediumEntries = useMemo(() => {
     if (!selectedMedium) return [];
     return allPublishedEntries
       .filter((e) => e.medium === selectedMedium)
-      .filter((e) => (selectedThread ? e.threadIds.includes(selectedThread) : true))
       .sort(
         (a, b) =>
           new Date(b.createdDate.replace(/\./g, '-')).getTime() -
           new Date(a.createdDate.replace(/\./g, '-')).getTime()
       );
-  }, [allPublishedEntries, selectedMedium, selectedThread]);
+  }, [allPublishedEntries, selectedMedium]);
 
   return (
     <div className="py-12 md:py-20 animate-fade-in">
@@ -139,60 +136,6 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate, filt
               <span>Full Database View</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
-          </div>
-        </div>
-
-        {/* Horizontal Thread Filter Ribbon */}
-        <div className="p-4 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
-          <div className="flex items-center justify-between text-xs font-mono-archival text-[#8C8C82]">
-            <span className="flex items-center space-x-1.5 font-medium text-[#141413]">
-              <Tag className="w-3 h-3 text-[#9E2A2B]" />
-              <span>CONCEPTUAL THREADS</span>
-            </span>
-            {selectedThread && (
-              <button
-                onClick={() => setSelectedThread(null)}
-                className="text-[11px] text-[#9E2A2B] hover:underline"
-              >
-                Clear Thread Filter &times;
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2 pt-1">
-            <button
-              onClick={() => setSelectedThread(null)}
-              className={`text-xs font-mono-archival px-2.5 py-1 border transition-colors ${
-                selectedThread === null
-                  ? 'bg-[#141413] text-[#FBFBFA] border-[#141413]'
-                  : 'bg-[#FBFBFA] text-[#4A4A44] border-[#E5E3DB] hover:border-[#141413]'
-              }`}
-            >
-              All Threads ({allPublishedEntries.length})
-            </button>
-            {threads.map((thread) => {
-              const count = allPublishedEntries.filter((e) =>
-                e.threadIds.includes(thread.id)
-              ).length;
-              const isSelected = selectedThread === thread.id;
-
-              return (
-                <button
-                  key={thread.id}
-                  onClick={() => setSelectedThread(isSelected ? null : thread.id)}
-                  className={`text-xs font-mono-archival px-2.5 py-1 border transition-colors flex items-center space-x-1.5 ${
-                    isSelected
-                      ? 'bg-[#9E2A2B] text-[#FBFBFA] border-[#9E2A2B] font-medium'
-                      : 'bg-[#FBFBFA] text-[#4A4A44] border-[#E5E3DB] hover:border-[#9E2A2B] hover:text-[#9E2A2B]'
-                  }`}
-                >
-                  <span>{thread.name}</span>
-                  <span className={`text-[10px] ${isSelected ? 'text-[#FBFBFA]/80' : 'text-[#8C8C82]'}`}>
-                    ({count})
-                  </span>
-                </button>
-              );
-            })}
           </div>
         </div>
 
@@ -298,8 +241,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate, filt
                     </button>
 
                     <span className="text-xs font-mono-archival text-[#8C8C82]">
-                      {mediumEntries.length} {mediumEntries.length === 1 ? 'RECORD' : 'RECORDS'}{' '}
-                      {selectedThread ? '(FILTERED)' : ''}
+                      {mediumEntries.length} {mediumEntries.length === 1 ? 'RECORD' : 'RECORDS'}
                     </span>
                   </div>
 
@@ -353,7 +295,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate, filt
                 <div className="divide-y divide-[#E5E3DB] border-y border-[#E5E3DB]">
                   {mediumEntries.length === 0 ? (
                     <div className="py-12 text-center text-sm font-mono-archival text-[#8C8C82]">
-                      No entries found for this medium matching current thread filter.
+                      No entries found for this medium.
                     </div>
                   ) : (
                     mediumEntries.map((entry) => {
