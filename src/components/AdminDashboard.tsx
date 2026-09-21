@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   SlidersHorizontal,
   Plus,
@@ -35,6 +35,7 @@ import {
   INITIAL_ENTRY_MEDIUMS,
 } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { api } from '../services/api';
 import { EntryEditor } from './EntryEditor';
 import { EntryReaderPreview } from './EntryReaderPreview';
 
@@ -74,6 +75,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
 
   // Return tab when saving or cancelling entry editing
   const [editorSourceTab, setEditorSourceTab] = useState<'entries' | 'homepage'>('entries');
+
+  // Cloudflare Access Session Authentication State
+  const [authState, setAuthState] = useState<{
+    loading: boolean;
+    authenticated: boolean;
+    userEmail?: string;
+  }>({ loading: true, authenticated: false });
+
+  useEffect(() => {
+    let isMounted = true;
+    api.getSession()
+      .then((session) => {
+        if (!isMounted) return;
+        if (session && session.authenticated) {
+          setAuthState({
+            loading: false,
+            authenticated: true,
+            userEmail: session.user?.email,
+          });
+        } else {
+          setAuthState({
+            loading: false,
+            authenticated: false,
+          });
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setAuthState({ loading: false, authenticated: false });
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Unified Entry Authoring & Editing State
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
@@ -350,6 +387,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     a.click();
   };
 
+  if (authState.loading) {
+    return (
+      <div className="py-24 animate-fade-in text-center">
+        <div className="max-w-md mx-auto px-4">
+          <div className="inline-flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82] tracking-widest uppercase mb-3">
+            <span className="w-2 h-2 rounded-full bg-[#9E2A2B] animate-pulse" />
+            <span>Verifying Access Assertion</span>
+          </div>
+          <p className="font-serif text-sm text-[#6B6960] italic">
+            Connecting to RUI Archive security perimeter...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authState.authenticated) {
+    return (
+      <div className="py-16 md:py-24 animate-fade-in">
+        <div className="max-w-xl mx-auto px-4 sm:px-6">
+          <div className="bg-[#FFFFFF] border border-[#E5E3DB] p-8 sm:p-10 shadow-sm space-y-6">
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82] tracking-widest uppercase">
+                <span className="text-[#9E2A2B] font-semibold">[ RUI ARCHIVE ]</span>
+                <span>•</span>
+                <span>RESTRICTED ACCESS</span>
+              </div>
+              <h1 className="font-serif text-2xl sm:text-3xl font-medium text-[#141413]">
+                Administrative Authentication Required
+              </h1>
+            </div>
+
+            <p className="text-sm text-[#4A4940] leading-relaxed font-serif">
+              Direct curation of the catalog, revisions, and modifications to Cloudflare D1 are restricted to the authorized administrator. Public read-only access remains active across the gallery.
+            </p>
+
+            <div className="p-4 bg-[#FBFBFA] border border-[#E5E3DB] text-xs font-mono-archival text-[#6B6960] space-y-1.5">
+              <div className="flex items-center space-x-2 text-[#141413] font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#9E2A2B]" />
+                <span>Zero Trust Perimeter Guard</span>
+              </div>
+              <p className="pl-3.5 leading-relaxed">
+                All database mutations are sealed under <code className="text-[#141413]">/api/admin/*</code> and require a cryptographically verified Cloudflare Access token.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <button
+                onClick={() => {
+                  window.location.href = `/api/admin/session?redirect=${encodeURIComponent(window.location.href)}`;
+                }}
+                className="px-6 py-3 bg-[#141413] hover:bg-[#2C2C28] text-[#FBFBFA] text-xs font-mono-archival tracking-wider uppercase transition-colors inline-flex items-center justify-center space-x-2"
+              >
+                <span>Authenticate with Cloudflare Access</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                onClick={() => onNavigate({ page: 'home' })}
+                className="px-5 py-3 bg-transparent hover:bg-[#F4F3EE] text-[#4A4940] border border-[#E5E3DB] text-xs font-mono-archival tracking-wider uppercase transition-colors"
+              >
+                Return to Gallery
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="py-10 md:py-16 animate-fade-in">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
@@ -360,7 +467,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
               <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82]">
                 <span className="text-[#9E2A2B] font-semibold">[ RUI CMS LAYER ]</span>
                 <span>•</span>
-                <span>AUTHENTICATED STUDIO VIEW</span>
+                <span className="text-emerald-400">AUTHENTICATED: {authState.userEmail || 'ADMINISTRATOR'}</span>
               </div>
               <h1 className="font-serif text-2xl sm:text-3xl font-medium mt-1">
                 Archive Content Management

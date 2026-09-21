@@ -218,6 +218,28 @@ async function parseApiResponse<T>(res: Response, fallbackError: string): Promis
 
 export const api = {
   /**
+   * Check administrator authentication state via Cloudflare Access assertion
+   */
+  async getSession(): Promise<{ authenticated: boolean; user?: { email?: string } }> {
+    try {
+      const res = await fetch('/api/admin/session', {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+      });
+      if (!res.ok) {
+        return { authenticated: false };
+      }
+      const json: ApiResponse<{ authenticated: boolean; user?: { email?: string } }> = await res.json();
+      if (json.data && typeof json.data.authenticated === 'boolean') {
+        return json.data;
+      }
+      return { authenticated: Boolean((json as any).authenticated), user: (json as any).user };
+    } catch {
+      return { authenticated: false };
+    }
+  },
+
+  /**
    * Fetch complete aggregate archive (Collections, Studies, Threads, Entries, Curated Works) from D1
    */
   async getArchive(): Promise<{
@@ -230,6 +252,7 @@ export const api = {
     try {
       const res = await fetch('/api/archive', {
         headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
       });
       if (!res.ok) return null;
       const contentType = res.headers.get('content-type') || '';
@@ -258,7 +281,7 @@ export const api = {
 
   // Collections CRUD
   async getCollections(): Promise<Collection[]> {
-    const res = await fetch('/api/collections');
+    const res = await fetch('/api/collections', { credentials: 'same-origin' });
     const json = await parseApiResponse<RawCollectionRecord[]>(res, 'Failed to fetch collections');
     return (json.data || []).map(mapRecordToCollection);
   },
@@ -272,9 +295,10 @@ export const api = {
     if (updates.locationContext !== undefined) payload.location_context = updates.locationContext || null;
     if (updates.order !== undefined) payload.order_index = updates.order;
 
-    const res = await fetch(`/api/collections/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/collections/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(payload),
     });
 
@@ -284,9 +308,10 @@ export const api = {
 
   async reorderCollections(items: { id: string; order: number }[]): Promise<boolean> {
     try {
-      const res = await fetch('/api/collections/reorder', {
+      const res = await fetch('/api/admin/collections/reorder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({
           items: items.map((i) => ({ id: i.id, order_index: i.order })),
         }),
@@ -316,9 +341,10 @@ export const api = {
       order_index: collection.order || 0,
     };
 
-    const res = await fetch('/api/collections', {
+    const res = await fetch('/api/admin/collections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(payload),
     });
 
@@ -327,15 +353,16 @@ export const api = {
   },
 
   async deleteCollection(id: string): Promise<void> {
-    const res = await fetch(`/api/collections/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/collections/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      credentials: 'same-origin',
     });
     await parseApiResponse<unknown>(res, 'Failed to delete collection');
   },
 
   // Studies CRUD
   async getStudies(): Promise<Study[]> {
-    const res = await fetch('/api/studies');
+    const res = await fetch('/api/studies', { credentials: 'same-origin' });
     const json = await parseApiResponse<RawStudyRecord[]>(res, 'Failed to fetch studies');
     return (json.data || []).map(mapRecordToStudy);
   },
@@ -350,9 +377,10 @@ export const api = {
       order_index: updates.order,
     };
 
-    const res = await fetch(`/api/studies/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/studies/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(payload),
     });
 
@@ -372,9 +400,10 @@ export const api = {
       order_index: study.order || 0,
     };
 
-    const res = await fetch('/api/studies', {
+    const res = await fetch('/api/admin/studies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(payload),
     });
 
@@ -383,23 +412,25 @@ export const api = {
   },
 
   async deleteStudy(id: string): Promise<void> {
-    const res = await fetch(`/api/studies/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/studies/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      credentials: 'same-origin',
     });
     await parseApiResponse<unknown>(res, 'Failed to delete study');
   },
 
   // Threads CRUD
   async getThreads(): Promise<Thread[]> {
-    const res = await fetch('/api/threads');
+    const res = await fetch('/api/threads', { credentials: 'same-origin' });
     const json = await parseApiResponse<RawThreadRecord[]>(res, 'Failed to fetch threads');
     return (json.data || []).map(mapRawToThread);
   },
 
   async createThread(thread: Partial<Thread>): Promise<Thread> {
-    const res = await fetch('/api/threads', {
+    const res = await fetch('/api/admin/threads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(thread),
     });
     const json = await parseApiResponse<RawThreadRecord>(res, 'Failed to create thread');
@@ -407,9 +438,10 @@ export const api = {
   },
 
   async updateThread(id: string, updates: Partial<Thread>): Promise<Thread> {
-    const res = await fetch(`/api/threads/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/threads/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(updates),
     });
     const json = await parseApiResponse<RawThreadRecord>(res, 'Failed to update thread');
@@ -417,8 +449,9 @@ export const api = {
   },
 
   async deleteThread(id: string): Promise<void> {
-    const res = await fetch(`/api/threads/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/threads/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      credentials: 'same-origin',
     });
     await parseApiResponse<unknown>(res, 'Failed to delete thread');
   },
@@ -437,21 +470,22 @@ export const api = {
     if (params?.visibility) searchParams.set('visibility', params.visibility);
 
     const qs = searchParams.toString();
-    const res = await fetch(`/api/entries${qs ? '?' + qs : ''}`);
+    const res = await fetch(`/api/entries${qs ? '?' + qs : ''}`, { credentials: 'same-origin' });
     const json = await parseApiResponse<RawHydratedEntry[]>(res, 'Failed to fetch entries');
     return (json.data || []).map(mapRawToEntry);
   },
 
   async getEntry(idOrSlug: string): Promise<Entry> {
-    const res = await fetch(`/api/entries/${encodeURIComponent(idOrSlug)}`);
+    const res = await fetch(`/api/entries/${encodeURIComponent(idOrSlug)}`, { credentials: 'same-origin' });
     const json = await parseApiResponse<RawHydratedEntry>(res, 'Entry not found');
     return mapRawToEntry(json.data!);
   },
 
   async createEntry(entry: Partial<Entry>): Promise<Entry> {
-    const res = await fetch('/api/entries', {
+    const res = await fetch('/api/admin/entries', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(entry),
     });
     const json = await parseApiResponse<RawHydratedEntry>(res, 'Failed to create entry');
@@ -459,9 +493,10 @@ export const api = {
   },
 
   async updateEntry(id: string, updates: Partial<Entry>): Promise<Entry> {
-    const res = await fetch(`/api/entries/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/entries/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(updates),
     });
     const json = await parseApiResponse<RawHydratedEntry>(res, 'Failed to update entry');
@@ -469,8 +504,9 @@ export const api = {
   },
 
   async deleteEntry(id: string): Promise<void> {
-    const res = await fetch(`/api/entries/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/entries/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      credentials: 'same-origin',
     });
     await parseApiResponse<unknown>(res, 'Failed to delete entry');
   },
@@ -485,21 +521,22 @@ export const api = {
     if (params?.visibility) searchParams.set('visibility', params.visibility);
 
     const qs = searchParams.toString();
-    const res = await fetch(`/api/works${qs ? '?' + qs : ''}`);
+    const res = await fetch(`/api/works${qs ? '?' + qs : ''}`, { credentials: 'same-origin' });
     const json = await parseApiResponse<RawHydratedCuratedWork[]>(res, 'Failed to fetch curated works');
     return (json.data || []).map(mapRawToCuratedWork);
   },
 
   async getWork(idOrSlug: string): Promise<CuratedWork> {
-    const res = await fetch(`/api/works/${encodeURIComponent(idOrSlug)}`);
+    const res = await fetch(`/api/works/${encodeURIComponent(idOrSlug)}`, { credentials: 'same-origin' });
     const json = await parseApiResponse<RawHydratedCuratedWork>(res, 'Curated work not found');
     return mapRawToCuratedWork(json.data!);
   },
 
   async createWork(work: Partial<CuratedWork>): Promise<CuratedWork> {
-    const res = await fetch('/api/works', {
+    const res = await fetch('/api/admin/works', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(work),
     });
     const json = await parseApiResponse<RawHydratedCuratedWork>(res, 'Failed to create curated work');
@@ -507,9 +544,10 @@ export const api = {
   },
 
   async updateWork(id: string, updates: Partial<CuratedWork>): Promise<CuratedWork> {
-    const res = await fetch(`/api/works/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/works/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(updates),
     });
     const json = await parseApiResponse<RawHydratedCuratedWork>(res, 'Failed to update curated work');
@@ -517,8 +555,9 @@ export const api = {
   },
 
   async deleteWork(id: string): Promise<void> {
-    const res = await fetch(`/api/works/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/admin/works/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      credentials: 'same-origin',
     });
     await parseApiResponse<unknown>(res, 'Failed to delete curated work');
   },

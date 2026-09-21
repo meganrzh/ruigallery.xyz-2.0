@@ -4,6 +4,8 @@
  * non-API static routes and SPAs to static assets.
  */
 
+import { handleAdminMutationRoutes } from './adminRoutes';
+
 export interface D1Result<T = unknown> {
   success: boolean;
   results?: T[];
@@ -34,6 +36,10 @@ export interface Env {
   ASSETS?: {
     fetch: (request: Request) => Promise<Response>;
   };
+  CF_ACCESS_AUD?: string;
+  CF_ACCESS_TEAM_DOMAIN?: string;
+  ENVIRONMENT?: string;
+  ALLOW_DEV_ADMIN_BYPASS?: string | boolean;
 }
 
 export interface CollectionRecord {
@@ -149,35 +155,285 @@ export interface CuratedWorkRelatedEntryRecord {
   entry_id: string;
 }
 
-function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
+export function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cf-Access-Jwt-Assertion',
       ...headers,
     },
   });
 }
 
-function errorResponse(message: string, status = 400): Response {
+export function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message, success: false }, status);
 }
 
-function handleCorsOptions(): Response {
+export function handleCorsOptions(): Response {
   return new Response(null, {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cf-Access-Jwt-Assertion',
     },
   });
 }
 
-function hydrateEntry(
+// ---------------------------------------------------------------------------
+// Cloudflare Access JWT Cryptographic Verification (Zero Trust Perimeter)
+// ---------------------------------------------------------------------------
+
+interface JwkKey {
+  kid: string;
+  kty: string;
+  alg: string;
+  use?: string;
+  n: string;
+  e: string;
+}
+
+interface JwksResponse {
+  keys: JwkKey[];
+}
+
+let cachedJwks: { keys: JwkKey[]; expiresAt: number; teamDomain: string } | null = null;
+
+function base64UrlToUint8Array(base64Url: string): Uint8Array {
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = base64.length % 4;
+  const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function base64UrlDecodeJson<T>(base64Url: string): T {
+  const bytes = base64UrlToUint8Array(base64Url);
+  const decoded = new TextDecoder().decode(bytes);
+  return JSON.parse(decoded) as T;
+}
+
+async function getAccessJwks(teamDomain: string): Promise<JwkKey[]> {
+  const cleanDomain = teamDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const now = Date.now();
+  if (cachedJwks && cachedJwks.teamDomain === cleanDomain && cachedJwks.expiresAt > now) {
+    return cachedJwks.keys;
+  }
+
+  const certsUrl = `https://${cleanDomain}/cdn-cgi/access/certs`;
+  const res = await fetch(certsUrl);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Cloudflare Access certificates from ${certsUrl} (HTTP ${res.status})`);
+  }
+
+  const data = (await res.json()) as JwksResponse;
+  if (!data || !Array.isArray(data.keys)) {
+    throw new Error(`Invalid JWKS response structure from ${certsUrl}`);
+  }
+
+  cachedJwks = {
+    keys: data.keys,
+    teamDomain: cleanDomain,
+    expiresAt: now + 10 * 60 * 1000, // 10 minutes cache
+  };
+
+  return data.keys;
+}
+
+function extractAccessJwt(request: Request): string | null {
+  // 1. Header: Cf-Access-Jwt-Assertion
+  const headerJwt = request.headers.get('Cf-Access-Jwt-Assertion');
+  if (headerJwt && headerJwt.trim()) {
+    return headerJwt.trim();
+  }
+
+  // 2. Cookie: CF_Authorization
+  const cookieHeader = request.headers.get('Cookie');
+  if (cookieHeader) {
+    const cookies = cookieHeader.split(';');
+    for (const cookie of cookies) {
+      const [name, ...rest] = cookie.trim().split('=');
+      if (name === 'CF_Authorization') {
+        const val = rest.join('=');
+        if (val) return decodeURIComponent(val.trim());
+      }
+    }
+  }
+
+  // 3. Header: Authorization Bearer <token>
+  const authHeader = request.headers.get('Authorization');
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const val = authHeader.slice(7).trim();
+    if (val) return val;
+  }
+
+  return null;
+}
+
+interface JwtHeader {
+  alg: string;
+  kid: string;
+  typ?: string;
+}
+
+interface JwtPayload {
+  aud: string | string[];
+  email?: string;
+  sub?: string;
+  iss?: string;
+  exp?: number;
+  nbf?: number;
+  iat?: number;
+  type?: string;
+  identity_nonce?: string;
+  custom?: Record<string, unknown>;
+}
+
+export async function authenticateAdminRequest(
+  request: Request,
+  env: Env
+): Promise<{ authenticated: boolean; user?: { email?: string; sub?: string }; error?: string }> {
+  // Developer bypass option for strictly local development/testing if explicitly enabled
+  const isDevMode = env.ENVIRONMENT === 'development' || !env.ENVIRONMENT || env.ENVIRONMENT === 'preview';
+  const allowBypass = env.ALLOW_DEV_ADMIN_BYPASS === 'true' || env.ALLOW_DEV_ADMIN_BYPASS === true;
+
+  if (isDevMode && allowBypass) {
+    return {
+      authenticated: true,
+      user: { email: 'dev-admin@rui-local.test', sub: 'dev-admin' },
+    };
+  }
+
+  const aud = env.CF_ACCESS_AUD?.trim();
+  const teamDomain = env.CF_ACCESS_TEAM_DOMAIN?.trim();
+
+  // Fail-closed: Both AUD and TEAM_DOMAIN must be configured to validate mutations
+  if (!aud || !teamDomain) {
+    return {
+      authenticated: false,
+      error: 'Cloudflare Access authentication is not configured on this Worker (CF_ACCESS_AUD and CF_ACCESS_TEAM_DOMAIN required). All mutations are sealed.',
+    };
+  }
+
+  const token = extractAccessJwt(request);
+  if (!token) {
+    return {
+      authenticated: false,
+      error: 'Missing Cloudflare Access assertion token',
+    };
+  }
+
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    return {
+      authenticated: false,
+      error: 'Malformed JWT token structure',
+    };
+  }
+
+  try {
+    const header = base64UrlDecodeJson<JwtHeader>(parts[0]);
+    const payload = base64UrlDecodeJson<JwtPayload>(parts[1]);
+
+    if (header.alg !== 'RS256') {
+      return {
+        authenticated: false,
+        error: `Unsupported JWT algorithm: ${header.alg}`,
+      };
+    }
+
+    const currentTimeSec = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < currentTimeSec) {
+      return {
+        authenticated: false,
+        error: 'Cloudflare Access assertion token has expired',
+      };
+    }
+    if (payload.nbf && payload.nbf > currentTimeSec) {
+      return {
+        authenticated: false,
+        error: 'Cloudflare Access assertion token is not yet valid',
+      };
+    }
+
+    // Validate AUD claim
+    const payloadAuds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+    if (!payloadAuds.includes(aud)) {
+      return {
+        authenticated: false,
+        error: 'JWT audience claim does not match configured CF_ACCESS_AUD',
+      };
+    }
+
+    // Validate ISS claim
+    const cleanDomain = teamDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    const expectedIssuer = `https://${cleanDomain}`;
+    if (payload.iss && payload.iss !== expectedIssuer) {
+      return {
+        authenticated: false,
+        error: `JWT issuer claim '${payload.iss}' does not match expected '${expectedIssuer}'`,
+      };
+    }
+
+    // Fetch and match public key
+    const jwks = await getAccessJwks(cleanDomain);
+    const keyMatch = jwks.find((k) => k.kid === header.kid);
+    if (!keyMatch) {
+      return {
+        authenticated: false,
+        error: `No matching public key found in Cloudflare Access certs for kid '${header.kid}'`,
+      };
+    }
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'jwk',
+      keyMatch,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+
+    const dataBytes = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+    const signatureBytes = base64UrlToUint8Array(parts[2]);
+
+    const isValid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      cryptoKey,
+      signatureBytes,
+      dataBytes
+    );
+
+    if (!isValid) {
+      return {
+        authenticated: false,
+        error: 'Cryptographic signature verification failed for Cloudflare Access token',
+      };
+    }
+
+    return {
+      authenticated: true,
+      user: {
+        email: payload.email,
+        sub: payload.sub,
+      },
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown JWT verification failure';
+    return {
+      authenticated: false,
+      error: `Access token verification error: ${msg}`,
+    };
+  }
+}
+
+export function hydrateEntry(
   entry: EntryRecord,
   studyCollectionMap: Map<string, string>,
   entryThreadsMap: Map<string, string[]>,
@@ -232,7 +488,7 @@ function hydrateEntry(
   };
 }
 
-function hydrateCuratedWork(
+export function hydrateCuratedWork(
   work: CuratedWorkRecord,
   workStudiesMap: Map<string, string[]>,
   workEntriesMap: Map<string, string[]>
@@ -284,7 +540,7 @@ function hydrateCuratedWork(
  * 2. null or empty string ("" / whitespace): author cleared field -> returns SQL null.
  * 3. non-empty text: trimmed text -> returns trimmed text.
  */
-function normalizeNullableText(
+export function normalizeNullableText(
   value: unknown,
   existingValue: string | null = null,
   isUpdate: boolean = false
@@ -311,6 +567,43 @@ export default {
     }
 
     try {
+      // 0. Method barrier: Block any mutating methods on public /api/* routes
+      if (pathname.startsWith('/api/') && !pathname.startsWith('/api/admin/')) {
+        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+          return errorResponse('Method Not Allowed: Mutations must use /api/admin/*', 405);
+        }
+      }
+
+      // 1. Cloudflare Access Protected Admin API Namespace (/api/admin/*)
+      if (pathname.startsWith('/api/admin/')) {
+        const auth = await authenticateAdminRequest(request, env);
+        if (!auth.authenticated) {
+          return errorResponse(`Unauthorized: ${auth.error || 'Authentication required'}`, 401);
+        }
+
+        // Session status check endpoint for Admin UI hydration & Cloudflare Access redirect support
+        if (pathname === '/api/admin/session' && method === 'GET') {
+          const redirectParam = url.searchParams.get('redirect');
+          if (redirectParam && (redirectParam.startsWith('/') || redirectParam.startsWith('http'))) {
+            return Response.redirect(redirectParam, 302);
+          }
+          return jsonResponse({
+            success: true,
+            authenticated: true,
+            user: {
+              email: auth.user?.email,
+              sub: auth.user?.sub,
+            },
+          });
+        }
+
+        return await handleAdminMutationRoutes(request, env, pathname, method);
+      }
+
+      // -----------------------------------------------------------------------
+      // PUBLIC UNRESTRICTED READ-ONLY API (GET)
+      // -----------------------------------------------------------------------
+
       // 1. GET /api/archive (Aggregate for initial hydration)
       if (pathname === '/api/archive' && method === 'GET') {
         const [
@@ -407,513 +700,113 @@ export default {
         });
       }
 
-      // 2. /api/collections
-      if (pathname === '/api/collections') {
-        if (method === 'GET') {
-          const { results } = await env.DB.prepare(
-            'SELECT * FROM collections ORDER BY order_index ASC, created_at ASC'
-          ).all<CollectionRecord>();
+      // 2. GET /api/collections
+      if (pathname === '/api/collections' && method === 'GET') {
+        const { results } = await env.DB.prepare(
+          'SELECT * FROM collections ORDER BY order_index ASC, created_at ASC'
+        ).all<CollectionRecord>();
 
-          return jsonResponse({
-            success: true,
-            data: results || [],
-          });
-        }
-
-        if (method === 'POST') {
-          const body = (await request.json()) as Partial<CollectionRecord>;
-          const id = body.id || `col-${Date.now()}`;
-          const slug = body.slug || body.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-') || `col-${Date.now()}`;
-          const title = body.title?.trim();
-
-          if (!title) {
-            return errorResponse('Collection title is required', 400);
-          }
-
-          let order_index = typeof body.order_index === 'number' && body.order_index > 0 ? body.order_index : null;
-          if (order_index === null) {
-            const maxRow = await env.DB.prepare('SELECT MAX(order_index) as max_order FROM collections').first<{ max_order: number | null }>();
-            order_index = (maxRow?.max_order ?? 0) + 1;
-          }
-          const now = new Date().toISOString();
-
-          await env.DB.prepare(
-            `INSERT INTO collections (id, slug, title, subtitle, description, period, location_context, order_index, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          ).bind(
-            id,
-            slug,
-            title,
-            body.subtitle || null,
-            body.description || null,
-            body.period || null,
-            body.location_context || null,
-            order_index,
-            now,
-            now
-          ).run();
-
-          const { results } = await env.DB.prepare(
-            'SELECT * FROM collections WHERE id = ?'
-          ).bind(id).all<CollectionRecord>();
-
-          return jsonResponse(
-            {
-              success: true,
-              data: results?.[0] || null,
-            },
-            201
-          );
-        }
+        return jsonResponse({
+          success: true,
+          data: results || [],
+        });
       }
 
-      // 2.1 /api/collections/reorder
-      if (pathname === '/api/collections/reorder' && method === 'POST') {
-        const body = (await request.json()) as { items?: Array<{ id: string; order_index: number }> };
-        const items = body.items || [];
-        const now = new Date().toISOString();
-        const statements = items.map((item) =>
-          env.DB.prepare('UPDATE collections SET order_index = ?, updated_at = ? WHERE id = ?')
-            .bind(item.order_index, now, item.id)
-        );
-
-        if (statements.length > 0) {
-          await env.DB.batch(statements);
-        }
-
-        return jsonResponse({ success: true, count: statements.length });
-      }
-
-      // 3. /api/collections/:id
+      // 3. GET /api/collections/:id
       const collectionMatch = pathname.match(/^\/api\/collections\/([^/]+)$/);
-      if (collectionMatch) {
+      if (collectionMatch && method === 'GET') {
         const id = decodeURIComponent(collectionMatch[1]);
 
-        if (method === 'GET') {
-          const { results } = await env.DB.prepare(
-            'SELECT * FROM collections WHERE id = ? OR slug = ?'
-          ).bind(id, id).all<CollectionRecord>();
+        const { results } = await env.DB.prepare(
+          'SELECT * FROM collections WHERE id = ? OR slug = ?'
+        ).bind(id, id).all<CollectionRecord>();
 
-          if (!results || results.length === 0) {
-            return errorResponse('Collection not found', 404);
-          }
-
-          return jsonResponse({
-            success: true,
-            data: results[0],
-          });
+        if (!results || results.length === 0) {
+          return errorResponse('Collection not found', 404);
         }
 
-        if (method === 'PUT') {
-          const body = (await request.json()) as Partial<CollectionRecord>;
-          const title = body.title !== undefined ? body.title.trim() : null;
-
-          if (body.title !== undefined && !title) {
-            return errorResponse('Collection title cannot be empty', 400);
-          }
-
-          const now = new Date().toISOString();
-
-          const result = await env.DB.prepare(
-            `UPDATE collections
-             SET title = COALESCE(?, title),
-                 subtitle = COALESCE(?, subtitle),
-                 description = COALESCE(?, description),
-                 period = COALESCE(?, period),
-                 location_context = COALESCE(?, location_context),
-                 order_index = COALESCE(?, order_index),
-                 updated_at = ?
-             WHERE id = ?`
-          ).bind(
-            title,
-            body.subtitle ?? null,
-            body.description ?? null,
-            body.period ?? null,
-            body.location_context ?? null,
-            body.order_index ?? null,
-            now,
-            id
-          ).run();
-
-          if (result.meta?.changes === 0) {
-            return errorResponse('Collection not found', 404);
-          }
-
-          const { results } = await env.DB.prepare(
-            'SELECT * FROM collections WHERE id = ?'
-          ).bind(id).all<CollectionRecord>();
-
-          return jsonResponse({
-            success: true,
-            data: results?.[0] || null,
-          });
-        }
-
-        if (method === 'DELETE') {
-          const countCheck = await env.DB.prepare(
-            'SELECT COUNT(*) as count FROM studies WHERE collection_id = ?'
-          ).bind(id).first<{ count: number }>();
-
-          if (countCheck && countCheck.count > 0) {
-            return errorResponse(
-              `Cannot delete collection: ${countCheck.count} study/studies belong to this collection. Move or delete them first.`,
-              409
-            );
-          }
-
-          const result = await env.DB.prepare(
-            'DELETE FROM collections WHERE id = ?'
-          ).bind(id).run();
-
-          if (result.meta?.changes === 0) {
-            return errorResponse('Collection not found', 404);
-          }
-
-          return jsonResponse({
-            success: true,
-            message: 'Collection deleted successfully',
-            id,
-          });
-        }
+        return jsonResponse({
+          success: true,
+          data: results[0],
+        });
       }
 
-      // 4. /api/studies
-      if (pathname === '/api/studies') {
-        if (method === 'GET') {
-          const { results } = await env.DB.prepare(
-            'SELECT * FROM studies ORDER BY order_index ASC, created_at ASC'
-          ).all<StudyRecord>();
+      // 4. GET /api/studies
+      if (pathname === '/api/studies' && method === 'GET') {
+        const { results } = await env.DB.prepare(
+          'SELECT * FROM studies ORDER BY order_index ASC, created_at ASC'
+        ).all<StudyRecord>();
 
-          return jsonResponse({
-            success: true,
-            data: results || [],
-          });
-        }
-
-        if (method === 'POST') {
-          const body = (await request.json()) as Partial<StudyRecord>;
-          const id = body.id || `std-${Date.now()}`;
-          const slug = body.slug || body.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-') || `std-${Date.now()}`;
-          const title = body.title?.trim();
-          const collection_id = body.collection_id?.trim();
-
-          if (!title) {
-            return errorResponse('Study title is required', 400);
-          }
-          if (!collection_id) {
-            return errorResponse('Valid collection_id is required', 400);
-          }
-
-          const collectionExists = await env.DB.prepare(
-            'SELECT id FROM collections WHERE id = ?'
-          ).bind(collection_id).first<{ id: string }>();
-
-          if (!collectionExists) {
-            return errorResponse(`Referenced collection '${collection_id}' does not exist`, 400);
-          }
-
-          const order_index = typeof body.order_index === 'number' ? body.order_index : 0;
-          const now = new Date().toISOString();
-
-          await env.DB.prepare(
-            `INSERT INTO studies (id, slug, collection_id, title, subtitle, description, archival_date, order_index, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          ).bind(
-            id,
-            slug,
-            collection_id,
-            title,
-            body.subtitle || null,
-            body.description || null,
-            body.archival_date || null,
-            order_index,
-            now,
-            now
-          ).run();
-
-          const { results } = await env.DB.prepare(
-            'SELECT * FROM studies WHERE id = ?'
-          ).bind(id).all<StudyRecord>();
-
-          return jsonResponse(
-            {
-              success: true,
-              data: results?.[0] || null,
-            },
-            201
-          );
-        }
+        return jsonResponse({
+          success: true,
+          data: results || [],
+        });
       }
 
-      // 5. /api/studies/:id
+      // 5. GET /api/studies/:id
       const studyMatch = pathname.match(/^\/api\/studies\/([^/]+)$/);
-      if (studyMatch) {
+      if (studyMatch && method === 'GET') {
         const id = decodeURIComponent(studyMatch[1]);
 
-        if (method === 'GET') {
-          const { results } = await env.DB.prepare(
-            'SELECT * FROM studies WHERE id = ? OR slug = ?'
-          ).bind(id, id).all<StudyRecord>();
+        const { results } = await env.DB.prepare(
+          'SELECT * FROM studies WHERE id = ? OR slug = ?'
+        ).bind(id, id).all<StudyRecord>();
 
-          if (!results || results.length === 0) {
-            return errorResponse('Study not found', 404);
-          }
-
-          return jsonResponse({
-            success: true,
-            data: results[0],
-          });
+        if (!results || results.length === 0) {
+          return errorResponse('Study not found', 404);
         }
 
-        if (method === 'PUT') {
-          const body = (await request.json()) as Partial<StudyRecord>;
-          const title = body.title?.trim();
-
-          if (!title) {
-            return errorResponse('Study title is required', 400);
-          }
-
-          if (body.collection_id) {
-            const collectionExists = await env.DB.prepare(
-              'SELECT id FROM collections WHERE id = ?'
-            ).bind(body.collection_id).first<{ id: string }>();
-
-            if (!collectionExists) {
-              return errorResponse(`Referenced collection '${body.collection_id}' does not exist`, 400);
-            }
-          }
-
-          const now = new Date().toISOString();
-
-          const result = await env.DB.prepare(
-            `UPDATE studies
-             SET title = ?,
-                 subtitle = COALESCE(?, subtitle),
-                 description = COALESCE(?, description),
-                 collection_id = COALESCE(?, collection_id),
-                 archival_date = COALESCE(?, archival_date),
-                 order_index = COALESCE(?, order_index),
-                 updated_at = ?
-             WHERE id = ?`
-          ).bind(
-            title,
-            body.subtitle ?? null,
-            body.description ?? null,
-            body.collection_id ?? null,
-            body.archival_date ?? null,
-            body.order_index ?? null,
-            now,
-            id
-          ).run();
-
-          if (result.meta?.changes === 0) {
-            return errorResponse('Study not found', 404);
-          }
-
-          const { results } = await env.DB.prepare(
-            'SELECT * FROM studies WHERE id = ?'
-          ).bind(id).all<StudyRecord>();
-
-          return jsonResponse({
-            success: true,
-            data: results?.[0] || null,
-          });
-        }
-
-        if (method === 'DELETE') {
-          // Check if entries reference this study
-          const entryCountCheck = await env.DB.prepare(
-            'SELECT COUNT(*) as count FROM entries WHERE study_id = ?'
-          ).bind(id).first<{ count: number }>();
-
-          if (entryCountCheck && entryCountCheck.count > 0) {
-            return errorResponse(
-              `Cannot delete study: ${entryCountCheck.count} entry/entries belong to this study. Delete them first.`,
-              409
-            );
-          }
-
-          const result = await env.DB.prepare(
-            'DELETE FROM studies WHERE id = ?'
-          ).bind(id).run();
-
-          if (result.meta?.changes === 0) {
-            return errorResponse('Study not found', 404);
-          }
-
-          return jsonResponse({
-            success: true,
-            message: 'Study deleted successfully',
-            id,
-          });
-        }
+        return jsonResponse({
+          success: true,
+          data: results[0],
+        });
       }
 
-      // 6. /api/threads
-      if (pathname === '/api/threads') {
-        if (method === 'GET') {
-          const { results } = await env.DB.prepare(
-            'SELECT * FROM threads ORDER BY order_index ASC, created_at ASC'
-          ).all<ThreadRecord>();
+      // 6. GET /api/threads
+      if (pathname === '/api/threads' && method === 'GET') {
+        const { results } = await env.DB.prepare(
+          'SELECT * FROM threads ORDER BY order_index ASC, created_at ASC'
+        ).all<ThreadRecord>();
 
-          return jsonResponse({
-            success: true,
-            data: (results || []).map((t) => ({
-              id: t.id,
-              slug: t.slug,
-              name: t.name,
-              description: t.description || undefined,
-              order: t.order_index,
-              createdAt: t.created_at,
-              updatedAt: t.updated_at,
-            })),
-          });
-        }
-
-        if (method === 'POST') {
-          const body = (await request.json()) as {
-            id?: string;
-            slug?: string;
-            name?: string;
-            description?: string;
-            order?: number;
-          };
-
-          const name = body.name?.trim();
-          if (!name) {
-            return errorResponse('Thread name is required', 400);
-          }
-
-          const id = body.id || `thread-${Date.now()}`;
-          const slug = body.slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || id;
-          const description = body.description?.trim() || null;
-          const order_index = typeof body.order === 'number' ? body.order : 0;
-          const now = new Date().toISOString();
-
-          await env.DB.prepare(
-            `INSERT INTO threads (id, slug, name, description, order_index, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`
-          ).bind(id, slug, name, description, order_index, now, now).run();
-
-          const created = await env.DB.prepare(
-            'SELECT * FROM threads WHERE id = ?'
-          ).bind(id).first<ThreadRecord>();
-
-          return jsonResponse(
-            {
-              success: true,
-              data: created
-                ? {
-                    id: created.id,
-                    slug: created.slug,
-                    name: created.name,
-                    description: created.description || undefined,
-                    order: created.order_index,
-                    createdAt: created.created_at,
-                    updatedAt: created.updated_at,
-                  }
-                : null,
-            },
-            201
-          );
-        }
+        return jsonResponse({
+          success: true,
+          data: (results || []).map((t) => ({
+            id: t.id,
+            slug: t.slug,
+            name: t.name,
+            description: t.description || undefined,
+            order: t.order_index,
+            createdAt: t.created_at,
+            updatedAt: t.updated_at,
+          })),
+        });
       }
 
-      // 7. /api/threads/:id
+      // 7. GET /api/threads/:id
       const threadMatch = pathname.match(/^\/api\/threads\/([^/]+)$/);
-      if (threadMatch) {
+      if (threadMatch && method === 'GET') {
         const id = decodeURIComponent(threadMatch[1]);
 
-        if (method === 'GET') {
-          const thread = await env.DB.prepare(
-            'SELECT * FROM threads WHERE id = ? OR slug = ?'
-          ).bind(id, id).first<ThreadRecord>();
+        const thread = await env.DB.prepare(
+          'SELECT * FROM threads WHERE id = ? OR slug = ?'
+        ).bind(id, id).first<ThreadRecord>();
 
-          if (!thread) {
-            return errorResponse('Thread not found', 404);
-          }
-
-          return jsonResponse({
-            success: true,
-            data: {
-              id: thread.id,
-              slug: thread.slug,
-              name: thread.name,
-              description: thread.description || undefined,
-              order: thread.order_index,
-              createdAt: thread.created_at,
-              updatedAt: thread.updated_at,
-            },
-          });
+        if (!thread) {
+          return errorResponse('Thread not found', 404);
         }
 
-        if (method === 'PUT') {
-          const body = (await request.json()) as {
-            name?: string;
-            description?: string;
-            order?: number;
-          };
-
-          const name = body.name?.trim();
-          if (!name) {
-            return errorResponse('Thread name is required', 400);
-          }
-
-          const now = new Date().toISOString();
-          const result = await env.DB.prepare(
-            `UPDATE threads
-             SET name = ?,
-                 description = COALESCE(?, description),
-                 order_index = COALESCE(?, order_index),
-                 updated_at = ?
-             WHERE id = ?`
-          ).bind(
-            name,
-            body.description ?? null,
-            typeof body.order === 'number' ? body.order : null,
-            now,
-            id
-          ).run();
-
-          if (result.meta?.changes === 0) {
-            return errorResponse('Thread not found', 404);
-          }
-
-          const updated = await env.DB.prepare(
-            'SELECT * FROM threads WHERE id = ?'
-          ).bind(id).first<ThreadRecord>();
-
-          return jsonResponse({
-            success: true,
-            data: updated
-              ? {
-                  id: updated.id,
-                  slug: updated.slug,
-                  name: updated.name,
-                  description: updated.description || undefined,
-                  order: updated.order_index,
-                  createdAt: updated.created_at,
-                  updatedAt: updated.updated_at,
-                }
-              : null,
-          });
-        }
-
-        if (method === 'DELETE') {
-          // Explicitly delete cascade associations
-          await env.DB.prepare('DELETE FROM entry_threads WHERE thread_id = ?').bind(id).run();
-          const result = await env.DB.prepare('DELETE FROM threads WHERE id = ?').bind(id).run();
-
-          if (result.meta?.changes === 0) {
-            return errorResponse('Thread not found', 404);
-          }
-
-          return jsonResponse({
-            success: true,
-            message: 'Thread deleted successfully',
-            id,
-          });
-        }
+        return jsonResponse({
+          success: true,
+          data: {
+            id: thread.id,
+            slug: thread.slug,
+            name: thread.name,
+            description: thread.description || undefined,
+            order: thread.order_index,
+            createdAt: thread.created_at,
+            updatedAt: thread.updated_at,
+          },
+        });
       }
 
       // 8. /api/entries
@@ -986,192 +879,12 @@ export default {
             data: list,
           });
         }
-
-        if (method === 'POST') {
-          const body = (await request.json()) as {
-            id?: string;
-            slug?: string;
-            entryNumber?: string;
-            studyId?: string | null;
-            title?: string;
-            subtitle?: string | null;
-            ruiRevision?: string | null;
-            medium?: string | null;
-            summary?: string | null;
-            excerpt?: string | null;
-            location?: string | null;
-            createdDate?: string;
-            displayDate?: string | null;
-            publishedDate?: string | null;
-            lastModifiedDate?: string | null;
-            featuredOnHome?: boolean | number;
-            homeLayoutWeight?: string | null;
-            coverImage?: string | null;
-            coverImageCaption?: string | null;
-            coverImageAlt?: string | null;
-            blocks?: unknown[];
-            metadata?: Record<string, string> | null;
-            threadIds?: string[];
-            relatedStudyIds?: string[];
-            relatedEntryIds?: string[];
-            visibility?: string;
-            order?: number;
-          };
-
-          const title = body.title?.trim();
-          if (!title) {
-            return errorResponse('Entry title is required', 400);
-          }
-
-          const studyId = body.studyId?.trim() || null;
-          let studyCollectionId = '';
-          if (studyId) {
-            const study = await env.DB.prepare(
-              'SELECT id, collection_id FROM studies WHERE id = ?'
-            ).bind(studyId).first<{ id: string; collection_id: string }>();
-
-            if (!study) {
-              return errorResponse(`Referenced study '${studyId}' does not exist`, 400);
-            }
-            studyCollectionId = study.collection_id;
-          }
-
-          const id = body.id || `entry-${Date.now()}`;
-          const entryNumber = body.entryNumber || '001';
-          const slug =
-            body.slug ||
-            `entry-${entryNumber}-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}` ||
-            id;
-          const ruiRevision = body.ruiRevision !== undefined ? body.ruiRevision : 'REV 00';
-          const medium = body.medium?.trim() || null;
-          const subtitle = body.subtitle?.trim() || null;
-          const summary = body.summary || '';
-          const excerpt = body.excerpt || null;
-          const location = body.location || '';
-          const now = new Date().toISOString();
-          const archivalDate = body.createdDate || now.slice(0, 10).replace(/-/g, '.');
-          const displayDate = body.displayDate || null;
-          const publishedDate = body.publishedDate || archivalDate;
-          const lastModifiedDate = body.lastModifiedDate || archivalDate;
-          const featuredOnHome = body.featuredOnHome ? 1 : 0;
-          const homeLayoutWeight = body.homeLayoutWeight || 'standard';
-          const coverImage = body.coverImage?.trim() || null;
-          const coverImageCaption = body.coverImageCaption?.trim() || null;
-          const coverImageAlt = body.coverImageAlt?.trim() || null;
-          const blocksJson = JSON.stringify(body.blocks || []);
-          const metadataJson = JSON.stringify(body.metadata || {});
-          const visibility = body.visibility || 'published';
-          const order_index = typeof body.order === 'number' ? body.order : 0;
-
-          const batchStatements: D1PreparedStatement[] = [
-            env.DB.prepare(
-              `INSERT INTO entries (
-                id, slug, entry_number, study_id, title, subtitle, rui_revision,
-                medium, summary, excerpt, location, archival_date, display_date,
-                published_date, last_modified_date, featured_on_home, home_layout_weight,
-                cover_image, cover_image_caption, cover_image_alt, blocks, metadata,
-                visibility, order_index, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            ).bind(
-              id,
-              slug,
-              entryNumber,
-              studyId,
-              title,
-              subtitle,
-              ruiRevision,
-              medium,
-              summary,
-              excerpt,
-              location,
-              archivalDate,
-              displayDate,
-              publishedDate,
-              lastModifiedDate,
-              featuredOnHome,
-              homeLayoutWeight,
-              coverImage,
-              coverImageCaption,
-              coverImageAlt,
-              blocksJson,
-              metadataJson,
-              visibility,
-              order_index,
-              now,
-              now
-            ),
-          ];
-
-          if (Array.isArray(body.threadIds)) {
-            for (const tId of body.threadIds) {
-              if (tId) {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO entry_threads (entry_id, thread_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(id, tId, now)
-                );
-              }
-            }
-          }
-
-          if (Array.isArray(body.relatedStudyIds)) {
-            for (const sId of body.relatedStudyIds) {
-              if (sId) {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO entry_related_studies (entry_id, study_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(id, sId, now)
-                );
-              }
-            }
-          }
-
-          if (Array.isArray(body.relatedEntryIds)) {
-            for (const reId of body.relatedEntryIds) {
-              if (reId) {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO entry_related_entries (entry_id, related_entry_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(id, reId, now)
-                );
-              }
-            }
-          }
-
-          await env.DB.batch(batchStatements);
-
-          const studyCollectionMap = new Map<string, string>();
-          if (studyId && studyCollectionId) {
-            studyCollectionMap.set(studyId, studyCollectionId);
-          }
-          const entryThreadsMap = new Map<string, string[]>([[id, body.threadIds || []]]);
-          const entryRelatedStudiesMap = new Map<string, string[]>([[id, body.relatedStudyIds || []]]);
-          const entryRelatedEntriesMap = new Map<string, string[]>([[id, body.relatedEntryIds || []]]);
-
-          const createdEntry = await env.DB.prepare(
-            'SELECT * FROM entries WHERE id = ?'
-          ).bind(id).first<EntryRecord>();
-
-          if (!createdEntry) {
-            return errorResponse('Failed to retrieve created entry', 500);
-          }
-
-          return jsonResponse(
-            {
-              success: true,
-              data: hydrateEntry(createdEntry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap),
-            },
-            201
-          );
-        }
       }
 
-      // 9. /api/entries/:id
+      // 9. GET /api/entries/:id
       const entryMatch = pathname.match(/^\/api\/entries\/([^/]+)$/);
-      if (entryMatch) {
+      if (entryMatch && method === 'GET') {
         const id = decodeURIComponent(entryMatch[1]);
-
-        if (method === 'GET') {
           const entry = await env.DB.prepare(
             'SELECT * FROM entries WHERE id = ? OR slug = ?'
           ).bind(id, id).first<EntryRecord>();
@@ -1215,256 +928,15 @@ export default {
             success: true,
             data: hydrateEntry(entry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap),
           });
-        }
-
-        if (method === 'PUT') {
-          const existing = await env.DB.prepare(
-            'SELECT * FROM entries WHERE id = ? OR slug = ?'
-          ).bind(id, id).first<EntryRecord>();
-
-          if (!existing) {
-            return errorResponse('Entry not found', 404);
-          }
-
-          const entryId = existing.id;
-          const body = (await request.json()) as {
-            title?: string;
-            subtitle?: string | null;
-            slug?: string;
-            entryNumber?: string;
-            studyId?: string | null;
-            ruiRevision?: string | null;
-            medium?: string | null;
-            summary?: string | null;
-            excerpt?: string | null;
-            location?: string | null;
-            createdDate?: string;
-            displayDate?: string | null;
-            publishedDate?: string | null;
-            lastModifiedDate?: string | null;
-            featuredOnHome?: boolean | number;
-            homeLayoutWeight?: string | null;
-            coverImage?: string | null;
-            coverImageCaption?: string | null;
-            coverImageAlt?: string | null;
-            blocks?: unknown[];
-            metadata?: Record<string, string> | null;
-            threadIds?: string[];
-            relatedStudyIds?: string[];
-            relatedEntryIds?: string[];
-            visibility?: string;
-            order?: number;
-          };
-
-          if (body.studyId) {
-            const studyExists = await env.DB.prepare(
-              'SELECT id FROM studies WHERE id = ?'
-            ).bind(body.studyId).first<{ id: string }>();
-
-            if (!studyExists) {
-              return errorResponse(`Referenced study '${body.studyId}' does not exist`, 400);
-            }
-          }
-
-          const now = new Date().toISOString();
-          const lastModified = body.lastModifiedDate || now.slice(0, 10).replace(/-/g, '.');
-          const blocksJson = body.blocks !== undefined ? JSON.stringify(body.blocks) : null;
-          const metadataJson = body.metadata !== undefined ? JSON.stringify(body.metadata) : null;
-          const updatedMedium =
-            body.medium !== undefined
-              ? (body.medium ? body.medium.trim() : null)
-              : existing.medium;
-          const updatedStudyId =
-            body.studyId !== undefined
-              ? (body.studyId ? body.studyId.trim() : null)
-              : existing.study_id;
-          const updatedFeatured =
-            body.featuredOnHome !== undefined
-              ? (body.featuredOnHome ? 1 : 0)
-              : existing.featured_on_home;
-          const updatedRuiRevision =
-            body.ruiRevision !== undefined
-              ? (body.ruiRevision ? body.ruiRevision : null)
-              : existing.rui_revision;
-
-          const batchStatements: D1PreparedStatement[] = [
-            env.DB.prepare(
-              `UPDATE entries
-               SET title = COALESCE(?, title),
-                   subtitle = COALESCE(?, subtitle),
-                   slug = COALESCE(?, slug),
-                   entry_number = COALESCE(?, entry_number),
-                   study_id = ?,
-                   rui_revision = ?,
-                   medium = ?,
-                   summary = COALESCE(?, summary),
-                   excerpt = COALESCE(?, excerpt),
-                   location = COALESCE(?, location),
-                   archival_date = COALESCE(?, archival_date),
-                   display_date = COALESCE(?, display_date),
-                   published_date = COALESCE(?, published_date),
-                   last_modified_date = ?,
-                   featured_on_home = ?,
-                   home_layout_weight = COALESCE(?, home_layout_weight),
-                   cover_image = COALESCE(?, cover_image),
-                   cover_image_caption = COALESCE(?, cover_image_caption),
-                   cover_image_alt = COALESCE(?, cover_image_alt),
-                   blocks = COALESCE(?, blocks),
-                   metadata = COALESCE(?, metadata),
-                   visibility = COALESCE(?, visibility),
-                   order_index = COALESCE(?, order_index),
-                   updated_at = ?
-               WHERE id = ?`
-            ).bind(
-              body.title ?? null,
-              body.subtitle ?? null,
-              body.slug ?? null,
-              body.entryNumber ?? null,
-              updatedStudyId,
-              updatedRuiRevision,
-              updatedMedium,
-              body.summary ?? null,
-              body.excerpt ?? null,
-              body.location ?? null,
-              body.createdDate ?? null,
-              body.displayDate ?? null,
-              body.publishedDate ?? null,
-              lastModified,
-              updatedFeatured,
-              body.homeLayoutWeight ?? null,
-              body.coverImage ?? null,
-              body.coverImageCaption ?? null,
-              body.coverImageAlt ?? null,
-              blocksJson,
-              metadataJson,
-              body.visibility ?? null,
-              typeof body.order === 'number' ? body.order : null,
-              now,
-              entryId
-            ),
-          ];
-
-          if (Array.isArray(body.threadIds)) {
-            batchStatements.push(
-              env.DB.prepare('DELETE FROM entry_threads WHERE entry_id = ?').bind(entryId)
-            );
-            for (const tId of body.threadIds) {
-              if (tId) {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO entry_threads (entry_id, thread_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(entryId, tId, now)
-                );
-              }
-            }
-          }
-
-          if (Array.isArray(body.relatedStudyIds)) {
-            batchStatements.push(
-              env.DB.prepare('DELETE FROM entry_related_studies WHERE entry_id = ?').bind(entryId)
-            );
-            for (const sId of body.relatedStudyIds) {
-              if (sId) {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO entry_related_studies (entry_id, study_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(entryId, sId, now)
-                );
-              }
-            }
-          }
-
-          if (Array.isArray(body.relatedEntryIds)) {
-            batchStatements.push(
-              env.DB.prepare('DELETE FROM entry_related_entries WHERE entry_id = ?').bind(entryId)
-            );
-            for (const reId of body.relatedEntryIds) {
-              if (reId) {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO entry_related_entries (entry_id, related_entry_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(entryId, reId, now)
-                );
-              }
-            }
-          }
-
-          await env.DB.batch(batchStatements);
-
-          const updatedEntry = await env.DB.prepare(
-            'SELECT * FROM entries WHERE id = ?'
-          ).bind(entryId).first<EntryRecord>();
-
-          if (!updatedEntry) {
-            return errorResponse('Failed to retrieve updated entry', 500);
-          }
-
-          const [study, entryThreads, entryRelatedStudies, entryRelatedEntries] = await Promise.all([
-            updatedEntry.study_id
-              ? env.DB.prepare('SELECT collection_id FROM studies WHERE id = ?')
-                  .bind(updatedEntry.study_id)
-                  .first<{ collection_id: string }>()
-              : Promise.resolve(null),
-            env.DB.prepare('SELECT thread_id FROM entry_threads WHERE entry_id = ?')
-              .bind(entryId)
-              .all<{ thread_id: string }>(),
-            env.DB.prepare('SELECT study_id FROM entry_related_studies WHERE entry_id = ?')
-              .bind(entryId)
-              .all<{ study_id: string }>(),
-            env.DB.prepare('SELECT related_entry_id FROM entry_related_entries WHERE entry_id = ?')
-              .bind(entryId)
-              .all<{ related_entry_id: string }>(),
-          ]);
-
-          const studyCollectionMap = new Map<string, string>();
-          if (updatedEntry.study_id && study?.collection_id) {
-            studyCollectionMap.set(updatedEntry.study_id, study.collection_id);
-          }
-          const entryThreadsMap = new Map<string, string[]>([
-            [entryId, (entryThreads.results || []).map((r) => r.thread_id)],
-          ]);
-          const entryRelatedStudiesMap = new Map<string, string[]>([
-            [entryId, (entryRelatedStudies.results || []).map((r) => r.study_id)],
-          ]);
-          const entryRelatedEntriesMap = new Map<string, string[]>([
-            [entryId, (entryRelatedEntries.results || []).map((r) => r.related_entry_id)],
-          ]);
-
-          return jsonResponse({
-            success: true,
-            data: hydrateEntry(updatedEntry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap),
-          });
-        }
-
-        if (method === 'DELETE') {
-          const existing = await env.DB.prepare(
-            'SELECT id FROM entries WHERE id = ? OR slug = ?'
-          ).bind(id, id).first<{ id: string }>();
-
-          if (!existing) {
-            return errorResponse('Entry not found', 404);
-          }
-
-          const entryId = existing.id;
-          await env.DB.batch([
-            env.DB.prepare('DELETE FROM entry_threads WHERE entry_id = ?').bind(entryId),
-            env.DB.prepare('DELETE FROM entry_related_studies WHERE entry_id = ?').bind(entryId),
-            env.DB.prepare('DELETE FROM entry_related_entries WHERE entry_id = ? OR related_entry_id = ?').bind(entryId, entryId),
-            env.DB.prepare('DELETE FROM entries WHERE id = ?').bind(entryId),
-          ]);
-
-          return jsonResponse({
-            success: true,
-            message: 'Entry deleted successfully',
-            id: entryId,
-          });
-        }
       }
 
       // 10. /api/works
       if (pathname === '/api/works') {
-        if (method === 'GET') {
-          const featuredParam = url.searchParams.get('featured');
+        if (method !== 'GET') {
+          return errorResponse('Method Not Allowed', 405);
+        }
+
+        const featuredParam = url.searchParams.get('featured');
           const visibilityParam = url.searchParams.get('visibility');
 
           let query = 'SELECT * FROM curated_works WHERE 1=1';
@@ -1510,135 +982,16 @@ export default {
             success: true,
             data: hydratedWorks,
           });
-        }
-
-        if (method === 'POST') {
-          const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-
-          if (!body.title || typeof body.title !== 'string') {
-            return errorResponse('Missing required field: title');
-          }
-          if (!body.slug || typeof body.slug !== 'string') {
-            return errorResponse('Missing required field: slug');
-          }
-
-          const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-          if (!body.archivalDate || typeof body.archivalDate !== 'string' || !ISO_DATE_REGEX.test(body.archivalDate.trim())) {
-            return errorResponse('Missing or invalid required field: archivalDate (must be YYYY-MM-DD)');
-          }
-
-          const id = ((body.id as string) || `work-${Date.now()}`).trim();
-          const slug = body.slug.trim().toLowerCase();
-          const title = (body.title as string).trim();
-          const subtitle = normalizeNullableText(body.subtitle);
-          const workType = String(body.workType || 'Essay');
-          const year = String(body.year || new Date().getFullYear().toString());
-          const date = String(body.date || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
-          const archivalDate = body.archivalDate.trim();
-          const featuredOnHome = body.featuredOnHome ? 1 : 0;
-          const homeLayoutWeight = String(body.homeLayoutWeight || 'standard');
-          const coverImage = String(body.coverImage || '');
-          const coverImageCaption = normalizeNullableText(body.coverImageCaption);
-          const coverImageAlt = normalizeNullableText(body.coverImageAlt);
-          const excerpt = String(body.excerpt || '');
-          const bodyBlocks = JSON.stringify(Array.isArray(body.bodyBlocks) ? body.bodyBlocks : []);
-          const metadata = JSON.stringify(body.metadata && typeof body.metadata === 'object' && body.metadata !== null ? body.metadata : {});
-          const visibility = String(body.visibility || 'published');
-          const orderIndex = (typeof body.order === 'number' ? body.order : 0) ?? 0;
-          const now = new Date().toISOString();
-
-          // Check if slug or id exists
-          const existing = await env.DB.prepare(
-            'SELECT id FROM curated_works WHERE id = ? OR slug = ?'
-          ).bind(id, slug).first();
-
-          if (existing) {
-            return errorResponse(`Curated work with ID '${id}' or slug '${slug}' already exists`, 409);
-          }
-
-          const batchStatements: D1PreparedStatement[] = [
-            env.DB.prepare(
-              `INSERT INTO curated_works (
-                id, slug, title, subtitle, work_type, year, date, archival_date, featured_on_home,
-                home_layout_weight, cover_image, cover_image_caption, cover_image_alt, excerpt, body_blocks, metadata, visibility, order_index, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            ).bind(
-              id,
-              slug,
-              title,
-              subtitle,
-              workType,
-              year,
-              date,
-              archivalDate,
-              featuredOnHome,
-              homeLayoutWeight,
-              coverImage,
-              coverImageCaption,
-              coverImageAlt,
-              excerpt,
-              bodyBlocks,
-              metadata,
-              visibility,
-              orderIndex,
-              now,
-              now
-            ),
-          ];
-
-          if (Array.isArray(body.relatedStudyIds)) {
-            for (const sId of body.relatedStudyIds) {
-              if (sId && typeof sId === 'string') {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO curated_work_related_studies (work_id, study_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(id, sId.trim(), now)
-                );
-              }
-            }
-          }
-
-          if (Array.isArray(body.relatedEntryIds)) {
-            for (const eId of body.relatedEntryIds) {
-              if (eId && typeof eId === 'string') {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO curated_work_related_entries (work_id, entry_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(id, eId.trim(), now)
-                );
-              }
-            }
-          }
-
-          await env.DB.batch(batchStatements);
-
-          const createdWork = await env.DB.prepare(
-            'SELECT * FROM curated_works WHERE id = ?'
-          ).bind(id).first<CuratedWorkRecord>();
-
-          if (!createdWork) {
-            return errorResponse('Failed to retrieve created curated work', 500);
-          }
-
-          const workStudiesMap = new Map<string, string[]>([[id, (body.relatedStudyIds as string[]) || []]]);
-          const workEntriesMap = new Map<string, string[]>([[id, (body.relatedEntryIds as string[]) || []]]);
-
-          return jsonResponse(
-            {
-              success: true,
-              data: hydrateCuratedWork(createdWork, workStudiesMap, workEntriesMap),
-            },
-            201
-          );
-        }
       }
 
       // 11. /api/works/:id
       const workMatch = pathname.match(/^\/api\/works\/([^/]+)$/);
       if (workMatch) {
-        const id = decodeURIComponent(workMatch[1]);
+        if (method !== 'GET') {
+          return errorResponse('Method Not Allowed', 405);
+        }
 
-        if (method === 'GET') {
+        const id = decodeURIComponent(workMatch[1]);
           const work = await env.DB.prepare(
             'SELECT * FROM curated_works WHERE id = ? OR slug = ?'
           ).bind(id, id).first<CuratedWorkRecord>();
@@ -1667,203 +1020,6 @@ export default {
             success: true,
             data: hydrateCuratedWork(work, workStudiesMap, workEntriesMap),
           });
-        }
-
-        if (method === 'PUT') {
-          const existing = await env.DB.prepare(
-            'SELECT * FROM curated_works WHERE id = ? OR slug = ?'
-          ).bind(id, id).first<CuratedWorkRecord>();
-
-          if (!existing) {
-            return errorResponse('Curated work not found', 404);
-          }
-
-          const workId = existing.id;
-          const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-          const now = new Date().toISOString();
-
-          const slug = (body.slug !== undefined && body.slug !== null
-            ? String(body.slug).trim().toLowerCase()
-            : existing.slug) ?? '';
-
-          const title = (body.title !== undefined && body.title !== null
-            ? String(body.title).trim()
-            : existing.title) ?? '';
-
-          const subtitle = normalizeNullableText(body.subtitle, existing.subtitle ?? null, true);
-
-          const workType = (body.workType !== undefined && body.workType !== null
-            ? String(body.workType)
-            : existing.work_type) ?? 'Essay';
-
-          const year = (body.year !== undefined && body.year !== null
-            ? String(body.year)
-            : existing.year) ?? '';
-
-          const date = (body.date !== undefined && body.date !== null
-            ? String(body.date)
-            : existing.date) ?? '';
-
-          const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-          let archivalDate = existing.archival_date;
-          if (body.archivalDate !== undefined && body.archivalDate !== null) {
-            const candidate = String(body.archivalDate).trim();
-            if (!ISO_DATE_REGEX.test(candidate)) {
-              return errorResponse('Invalid field: archivalDate (must be YYYY-MM-DD)');
-            }
-            archivalDate = candidate;
-          }
-
-          const featuredOnHome = (body.featuredOnHome !== undefined && body.featuredOnHome !== null
-            ? (body.featuredOnHome ? 1 : 0)
-            : existing.featured_on_home) ?? 0;
-
-          const homeLayoutWeight = (body.homeLayoutWeight !== undefined && body.homeLayoutWeight !== null
-            ? String(body.homeLayoutWeight)
-            : existing.home_layout_weight) ?? 'standard';
-
-          const coverImage = (body.coverImage !== undefined && body.coverImage !== null
-            ? String(body.coverImage)
-            : existing.cover_image) ?? '';
-
-          const coverImageCaption = normalizeNullableText(body.coverImageCaption, existing.cover_image_caption ?? null, true);
-
-          const coverImageAlt = normalizeNullableText(body.coverImageAlt, existing.cover_image_alt ?? null, true);
-
-          const excerpt = (body.excerpt !== undefined && body.excerpt !== null
-            ? String(body.excerpt)
-            : existing.excerpt) ?? '';
-
-          const bodyBlocks = (body.bodyBlocks !== undefined && body.bodyBlocks !== null
-            ? JSON.stringify(Array.isArray(body.bodyBlocks) ? body.bodyBlocks : [])
-            : (existing.body_blocks ?? '[]')) ?? '[]';
-
-          const metadata = (body.metadata !== undefined && body.metadata !== null
-            ? JSON.stringify(typeof body.metadata === 'object' && body.metadata !== null ? body.metadata : {})
-            : (existing.metadata ?? '{}')) ?? '{}';
-
-          const visibility = (body.visibility !== undefined && body.visibility !== null
-            ? String(body.visibility)
-            : existing.visibility) ?? 'published';
-
-          const orderIndex = (typeof body.order === 'number'
-            ? body.order
-            : existing.order_index) ?? 0;
-
-          const batchStatements: D1PreparedStatement[] = [
-            env.DB.prepare(
-              `UPDATE curated_works SET
-                slug = ?, title = ?, subtitle = ?, work_type = ?, year = ?, date = ?, archival_date = ?,
-                featured_on_home = ?, home_layout_weight = ?, cover_image = ?, cover_image_caption = ?, cover_image_alt = ?, excerpt = ?,
-                body_blocks = ?, metadata = ?, visibility = ?, order_index = ?, updated_at = ?
-              WHERE id = ?`
-            ).bind(
-              slug,
-              title,
-              subtitle,
-              workType,
-              year,
-              date,
-              archivalDate,
-              featuredOnHome,
-              homeLayoutWeight,
-              coverImage,
-              coverImageCaption,
-              coverImageAlt,
-              excerpt,
-              bodyBlocks,
-              metadata,
-              visibility,
-              orderIndex,
-              now,
-              workId
-            ),
-          ];
-
-          if (Array.isArray(body.relatedStudyIds)) {
-            batchStatements.push(
-              env.DB.prepare('DELETE FROM curated_work_related_studies WHERE work_id = ?').bind(workId)
-            );
-            for (const sId of body.relatedStudyIds) {
-              if (sId && typeof sId === 'string') {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO curated_work_related_studies (work_id, study_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(workId, sId.trim(), now)
-                );
-              }
-            }
-          }
-
-          if (Array.isArray(body.relatedEntryIds)) {
-            batchStatements.push(
-              env.DB.prepare('DELETE FROM curated_work_related_entries WHERE work_id = ?').bind(workId)
-            );
-            for (const eId of body.relatedEntryIds) {
-              if (eId && typeof eId === 'string') {
-                batchStatements.push(
-                  env.DB.prepare(
-                    'INSERT OR IGNORE INTO curated_work_related_entries (work_id, entry_id, created_at) VALUES (?, ?, ?)'
-                  ).bind(workId, eId.trim(), now)
-                );
-              }
-            }
-          }
-
-          await env.DB.batch(batchStatements);
-
-          const updatedWork = await env.DB.prepare(
-            'SELECT * FROM curated_works WHERE id = ?'
-          ).bind(workId).first<CuratedWorkRecord>();
-
-          if (!updatedWork) {
-            return errorResponse('Failed to retrieve updated curated work', 500);
-          }
-
-          const [studiesResult, entriesResult] = await Promise.all([
-            env.DB.prepare('SELECT study_id FROM curated_work_related_studies WHERE work_id = ?')
-              .bind(workId)
-              .all<{ study_id: string }>(),
-            env.DB.prepare('SELECT entry_id FROM curated_work_related_entries WHERE work_id = ?')
-              .bind(workId)
-              .all<{ entry_id: string }>(),
-          ]);
-
-          const workStudiesMap = new Map<string, string[]>([
-            [workId, (studiesResult.results || []).map((r) => r.study_id)],
-          ]);
-          const workEntriesMap = new Map<string, string[]>([
-            [workId, (entriesResult.results || []).map((r) => r.entry_id)],
-          ]);
-
-          return jsonResponse({
-            success: true,
-            data: hydrateCuratedWork(updatedWork, workStudiesMap, workEntriesMap),
-          });
-        }
-
-        if (method === 'DELETE') {
-          const existing = await env.DB.prepare(
-            'SELECT id FROM curated_works WHERE id = ? OR slug = ?'
-          ).bind(id, id).first<{ id: string }>();
-
-          if (!existing) {
-            return errorResponse('Curated work not found', 404);
-          }
-
-          const workId = existing.id;
-          await env.DB.batch([
-            env.DB.prepare('DELETE FROM curated_work_related_studies WHERE work_id = ?').bind(workId),
-            env.DB.prepare('DELETE FROM curated_work_related_entries WHERE work_id = ?').bind(workId),
-            env.DB.prepare('DELETE FROM curated_works WHERE id = ?').bind(workId),
-          ]);
-
-          return jsonResponse({
-            success: true,
-            message: 'Curated work deleted successfully',
-            id: workId,
-          });
-        }
       }
 
       // If an /api/ route is unmatched, return a 404 JSON response instead of HTML

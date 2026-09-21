@@ -2,6 +2,15 @@ name = "ruigallery-xyz-2-0"
 main = "./src/worker.ts"
 compatibility_date = "2026-08-30"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+[vars]
+# Cloudflare Access Zero Trust configurations.
+# In production, provide CF_ACCESS_AUD and CF_ACCESS_TEAM_DOMAIN via Cloudflare Dashboard
+# or Wrangler secrets:
+#   npx wrangler secret put CF_ACCESS_AUD
+#   npx wrangler secret put CF_ACCESS_TEAM_DOMAIN
+ENVIRONMENT = "production"
 
 [assets]
 directory = "./dist"
@@ -13,3 +22,4 @@ binding = "DB"
 database_name = "ruigallery-db"
 database_id = "a0ea467f-3f8c-4ce2-b106-3a503cb3928d"
 migrations_dir = "migrations"
+
