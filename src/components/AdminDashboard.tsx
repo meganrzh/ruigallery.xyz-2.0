@@ -19,6 +19,10 @@ import {
   Upload,
   X,
   AlertCircle,
+  ChevronUp,
+  ChevronDown,
+  GripVertical,
+  ArrowUpDown,
 } from 'lucide-react';
 import {
   Entry,
@@ -51,6 +55,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     deleteEntry,
     addCollection,
     updateCollection,
+    deleteCollection,
+    reorderCollections,
     addStudy,
     updateStudy,
     addThread,
@@ -117,6 +123,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [newColSubtitle, setNewColSubtitle] = useState('');
   const [newColDesc, setNewColDesc] = useState('');
   const [newColPeriod, setNewColPeriod] = useState('2026 — Present');
+  const [newColOrder, setNewColOrder] = useState<number>(collections.length + 1);
 
   // New Study Form State
   const [newStdTitle, setNewStdTitle] = useState('');
@@ -129,12 +136,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [newThreadName, setNewThreadName] = useState('');
   const [newThreadDesc, setNewThreadDesc] = useState('');
 
+  // Collections sorted strictly by explicit showcase display order
+  const sortedCollections = useMemo(() => {
+    return [...collections].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }, [collections]);
+
+  // Drag and Drop reordering state
+  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
+  const [dragOverColIndex, setDragOverColIndex] = useState<number | null>(null);
+
   // Editing existing Collection State
   const [editingColId, setEditingColId] = useState<string | null>(null);
   const [editColTitle, setEditColTitle] = useState('');
   const [editColSubtitle, setEditColSubtitle] = useState('');
   const [editColDesc, setEditColDesc] = useState('');
   const [editColPeriod, setEditColPeriod] = useState('');
+  const [editColOrder, setEditColOrder] = useState<number>(1);
   const [isSavingCol, setIsSavingCol] = useState(false);
 
   // Editing existing Study State
@@ -151,6 +168,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     setEditColSubtitle(col.subtitle || '');
     setEditColDesc(col.description);
     setEditColPeriod(col.period);
+    const existingIndex = sortedCollections.findIndex((c) => c.id === col.id);
+    setEditColOrder(col.order ?? (existingIndex !== -1 ? existingIndex + 1 : 1));
   };
 
   const handleSaveCollectionEdit = async (e: React.FormEvent) => {
@@ -163,6 +182,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         subtitle: editColSubtitle,
         description: editColDesc,
         period: editColPeriod,
+        order: Number(editColOrder) || 1,
       });
       setSuccessMessage(`Collection "${editColTitle}" updated and persisted!`);
       setEditingColId(null);
@@ -172,6 +192,73 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     } finally {
       setIsSavingCol(false);
     }
+  };
+
+  // Reorder Collection Handlers
+  const handleMoveCollection = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= sortedCollections.length) return;
+
+    const newOrder = [...sortedCollections];
+    const [moved] = newOrder.splice(index, 1);
+    newOrder.splice(targetIndex, 0, moved);
+
+    await reorderCollections(newOrder);
+    setSuccessMessage(`Moved "${moved.title}" to showcase position #${targetIndex + 1}`);
+    setTimeout(() => setSuccessMessage(null), 2500);
+  };
+
+  const handleSetCollectionOrder = async (collectionId: string, newOrder: number) => {
+    const targetIndex = Math.max(0, Math.min(newOrder - 1, sortedCollections.length - 1));
+    const currentIndex = sortedCollections.findIndex((c) => c.id === collectionId);
+    if (currentIndex === -1 || currentIndex === targetIndex) return;
+
+    const newOrderList = [...sortedCollections];
+    const [moved] = newOrderList.splice(currentIndex, 1);
+    newOrderList.splice(targetIndex, 0, moved);
+
+    await reorderCollections(newOrderList);
+    setSuccessMessage(`Moved "${moved.title}" to showcase position #${targetIndex + 1}`);
+    setTimeout(() => setSuccessMessage(null), 2500);
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedColIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `${index}`);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverColIndex !== index) {
+      setDragOverColIndex(index);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedColIndex(null);
+    setDragOverColIndex(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedColIndex === null || draggedColIndex === dropIndex) {
+      setDraggedColIndex(null);
+      setDragOverColIndex(null);
+      return;
+    }
+
+    const newOrder = [...sortedCollections];
+    const [moved] = newOrder.splice(draggedColIndex, 1);
+    newOrder.splice(dropIndex, 0, moved);
+
+    setDraggedColIndex(null);
+    setDragOverColIndex(null);
+
+    await reorderCollections(newOrder);
+    setSuccessMessage(`Moved "${moved.title}" to showcase position #${dropIndex + 1}`);
+    setTimeout(() => setSuccessMessage(null), 2500);
   };
 
   const startEditStudy = (std: (typeof studies)[0]) => {
@@ -214,11 +301,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       subtitle: newColSubtitle,
       description: newColDesc,
       period: newColPeriod,
-      order: collections.length + 1,
+      order: Number(newColOrder) || collections.length + 1,
     });
     setNewColTitle('');
     setNewColSubtitle('');
     setNewColDesc('');
+    setNewColOrder(collections.length + 2);
     setSuccessMessage(`Collection "${newColTitle}" created!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
@@ -945,15 +1033,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                       className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
-                    <input
-                      type="text"
-                      value={newColPeriod}
-                      onChange={(e) => setNewColPeriod(e.target.value)}
-                      placeholder="2026 — Present"
-                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
+                      <input
+                        type="text"
+                        value={newColPeriod}
+                        onChange={(e) => setNewColPeriod(e.target.value)}
+                        placeholder="2026 — Present"
+                        className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Showcase Order</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={newColOrder}
+                        onChange={(e) => setNewColOrder(Number(e.target.value) || 1)}
+                        className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
@@ -987,7 +1087,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                       onChange={(e) => setNewStdColId(e.target.value)}
                       className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
                     >
-                      {collections.map((c) => (
+                      {sortedCollections.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.title}
                         </option>
@@ -1027,17 +1127,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
 
             {/* Existing Collections & Studies Interactive Management */}
             <div className="space-y-6">
-              <h3 className="font-serif text-xl text-[#141413] font-medium pb-2 border-b border-[#E5E3DB]">
-                Manage Existing Hierarchy & Studies
-              </h3>
+              <div className="pb-3 border-b border-[#E5E3DB] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <h3 className="font-serif text-xl text-[#141413] font-medium">
+                    Manage Existing Hierarchy & Studies
+                  </h3>
+                  <p className="text-xs font-mono-archival text-[#8C8C82] mt-0.5">
+                    Order defined here controls the exact showcase display sequence on the public Laboratory page.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82] bg-[#F4F3EE] px-3 py-1.5 border border-[#E5E3DB]">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-[#9E2A2B]" />
+                  <span>Drag cards or use ▲ / ▼ / Pos to reorder</span>
+                </div>
+              </div>
 
               <div className="space-y-6">
-                {collections.map((collection) => {
+                {sortedCollections.map((collection, index) => {
                   const collectionStudies = studies.filter((s) => s.collectionId === collection.id);
                   const isEditingCol = editingColId === collection.id;
+                  const isDraggingOver = dragOverColIndex === index;
 
                   return (
-                    <div key={collection.id} className="border border-[#E5E3DB] bg-[#FBFBFA] p-6 space-y-4">
+                    <div
+                      key={collection.id}
+                      draggable={!editingColId}
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDragEnd={handleDragEnd}
+                      onDrop={(e) => handleDrop(e, index)}
+                      className={`border bg-[#FBFBFA] p-6 space-y-4 transition-all ${
+                        isDraggingOver
+                          ? 'border-[#9E2A2B] ring-2 ring-[#9E2A2B]/20 bg-[#F4F3EE]'
+                          : 'border-[#E5E3DB]'
+                      }`}
+                    >
                       {/* Collection Header */}
                       {isEditingCol ? (
                         <form onSubmit={handleSaveCollectionEdit} className="p-4 bg-[#F4F3EE] border border-[#E5E3DB] space-y-3 text-xs font-mono-archival">
@@ -1063,14 +1187,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               />
                             </div>
                           </div>
-                          <div>
-                            <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
-                            <input
-                              type="text"
-                              value={editColPeriod}
-                              onChange={(e) => setEditColPeriod(e.target.value)}
-                              className="w-full p-2 bg-white border border-[#E5E3DB]"
-                            />
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
+                              <input
+                                type="text"
+                                value={editColPeriod}
+                                onChange={(e) => setEditColPeriod(e.target.value)}
+                                className="w-full p-2 bg-white border border-[#E5E3DB]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Showcase Display Order</label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={editColOrder}
+                                onChange={(e) => setEditColOrder(Number(e.target.value) || 1)}
+                                className="w-full p-2 bg-white border border-[#E5E3DB]"
+                              />
+                            </div>
                           </div>
                           <div>
                             <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
@@ -1099,26 +1235,81 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                           </div>
                         </form>
                       ) : (
-                        <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#E5E3DB]">
-                          <div>
-                            <div className="flex items-center gap-2 text-xs font-mono-archival text-[#8C8C82]">
-                              <span className="font-semibold text-[#141413]">{collection.title}</span>
-                              <span>•</span>
-                              <span>{collection.period}</span>
-                              <span>•</span>
-                              <span>{collectionStudies.length} Studies</span>
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-[#E5E3DB]">
+                          <div className="flex items-start gap-3">
+                            {/* Drag Handle */}
+                            <div
+                              className="cursor-grab active:cursor-grabbing text-[#8C8C82] hover:text-[#141413] p-1 mt-0.5 shrink-0"
+                              title="Click and drag to reorder collection showcase position"
+                            >
+                              <GripVertical className="w-4 h-4" />
                             </div>
-                            {collection.subtitle && (
-                              <p className="font-serif text-sm text-[#6E6E66] italic mt-0.5">{collection.subtitle}</p>
-                            )}
-                            <p className="font-serif text-xs text-[#6E6E66] mt-1 max-w-2xl">{collection.description}</p>
+
+                            <div className="space-y-1">
+                              <div className="flex items-center flex-wrap gap-2 text-xs font-mono-archival text-[#8C8C82]">
+                                <span className="px-2 py-0.5 bg-[#141413] text-[#FBFBFA] font-semibold text-[10px] tracking-wider">
+                                  ORDER #{index + 1}
+                                </span>
+                                <span className="font-semibold text-[#141413] text-sm">{collection.title}</span>
+                                <span>•</span>
+                                <span>{collection.period}</span>
+                                <span>•</span>
+                                <span>{collectionStudies.length} Studies</span>
+                              </div>
+                              {collection.subtitle && (
+                                <p className="font-serif text-sm text-[#6E6E66] italic mt-0.5">{collection.subtitle}</p>
+                              )}
+                              <p className="font-serif text-xs text-[#6E6E66] mt-1 max-w-2xl">{collection.description}</p>
+                            </div>
                           </div>
-                          <button
-                            onClick={() => startEditCollection(collection)}
-                            className="px-3 py-1 text-xs font-mono-archival border border-[#E5E3DB] bg-white hover:border-[#141413] shrink-0"
-                          >
-                            Edit Collection
-                          </button>
+
+                          {/* Order & Edit Controls */}
+                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
+                            {/* Move Up / Down Buttons */}
+                            <div className="flex items-center border border-[#E5E3DB] bg-white">
+                              <button
+                                onClick={() => handleMoveCollection(index, 'up')}
+                                disabled={index === 0}
+                                className="p-1 text-[#6E6E66] hover:text-[#141413] hover:bg-[#F4F3EE] disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-[#6E6E66] transition-colors"
+                                title="Move Up in Showcase Order"
+                              >
+                                <ChevronUp className="w-4 h-4" />
+                              </button>
+                              <div className="w-[1px] h-4 bg-[#E5E3DB]" />
+                              <button
+                                onClick={() => handleMoveCollection(index, 'down')}
+                                disabled={index === sortedCollections.length - 1}
+                                className="p-1 text-[#6E6E66] hover:text-[#141413] hover:bg-[#F4F3EE] disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-[#6E6E66] transition-colors"
+                                title="Move Down in Showcase Order"
+                              >
+                                <ChevronDown className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            {/* Direct Position Selector */}
+                            <div className="flex items-center space-x-1 border border-[#E5E3DB] bg-white px-2 py-1 text-xs font-mono-archival">
+                              <span className="text-[#8C8C82] text-[10px] uppercase">Pos:</span>
+                              <select
+                                value={index + 1}
+                                onChange={(e) => handleSetCollectionOrder(collection.id, Number(e.target.value))}
+                                className="bg-transparent font-semibold text-[#141413] outline-none cursor-pointer text-xs"
+                                title="Set specific display order position"
+                              >
+                                {sortedCollections.map((_, i) => (
+                                  <option key={i + 1} value={i + 1}>
+                                    #{i + 1}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <button
+                              onClick={() => startEditCollection(collection)}
+                              className="px-3 py-1 text-xs font-mono-archival border border-[#E5E3DB] bg-white hover:border-[#141413] shrink-0"
+                            >
+                              Edit Collection
+                            </button>
+                          </div>
                         </div>
                       )}
 

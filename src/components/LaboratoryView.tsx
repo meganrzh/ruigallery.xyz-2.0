@@ -49,6 +49,11 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate, filt
     [entries]
   );
 
+  // Collections showcase order: sorted explicitly by Admin-defined display order
+  const showcaseCollections = useMemo(() => {
+    return [...collections].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }, [collections]);
+
   // Derive active mediums strictly from published entries (no empty categories publicly)
   const availableMediums = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -451,7 +456,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate, filt
             </div>
 
             <div className="space-y-4">
-              {collections.map((collection) => {
+              {showcaseCollections.map((collection) => {
                 const studiesInCol = getStudiesByCollection(collection.id);
                 const totalEntries = entries.filter(
                   (e) => e.collectionId === collection.id && e.visibility === 'published'

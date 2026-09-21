@@ -59,6 +59,7 @@ interface ArchiveContextType {
   addCollection: (col: Omit<Collection, 'id'>) => Promise<Collection>;
   updateCollection: (id: string, updates: Partial<Collection>) => Promise<void>;
   deleteCollection: (id: string) => void;
+  reorderCollections: (orderedCollections: Collection[]) => Promise<void>;
 
   addStudy: (std: Omit<Study, 'id'>) => Promise<Study>;
   updateStudy: (id: string, updates: Partial<Study>) => Promise<void>;
@@ -85,6 +86,10 @@ function sortCuratedWorks(works: CuratedWork[]): CuratedWork[] {
   return [...works].sort((a, b) => (b.archivalDate || '').localeCompare(a.archivalDate || ''));
 }
 
+export function sortCollections(cols: Collection[]): Collection[] {
+  return [...cols].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
 export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isPersistent, setIsPersistent] = useState(false);
@@ -92,9 +97,10 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [collections, setCollections] = useState<Collection[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.COLLECTIONS);
-      return saved ? JSON.parse(saved) : INITIAL_COLLECTIONS;
+      const parsed = saved ? JSON.parse(saved) : INITIAL_COLLECTIONS;
+      return sortCollections(parsed);
     } catch {
-      return INITIAL_COLLECTIONS;
+      return sortCollections(INITIAL_COLLECTIONS);
     }
   });
 
@@ -138,7 +144,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const persistent = await api.getArchive();
       if (persistent) {
         if (persistent.collections && persistent.collections.length > 0) {
-          setCollections(persistent.collections);
+          setCollections(sortCollections(persistent.collections));
         }
         if (persistent.studies && persistent.studies.length > 0) {
           setStudies(persistent.studies);
@@ -468,26 +474,48 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const addCollection = async (colData: Omit<Collection, 'id'>): Promise<Collection> => {
     const tempId = `col-${Date.now()}`;
+    const nextOrder = colData.order ?? (collections.length + 1);
     const newCol: Collection = {
       ...colData,
+      order: nextOrder,
       id: tempId,
     };
     try {
       const persisted = await api.createCollection(newCol);
-      setCollections((prev) => [...prev, persisted]);
+      setCollections((prev) => sortCollections([...prev, persisted]));
       return persisted;
     } catch {
-      setCollections((prev) => [...prev, newCol]);
+      setCollections((prev) => sortCollections([...prev, newCol]));
       return newCol;
     }
   };
 
   const updateCollection = async (id: string, updates: Partial<Collection>): Promise<void> => {
-    setCollections((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+    const existing = collections.find((c) => c.id === id);
+    setCollections((prev) =>
+      sortCollections(prev.map((c) => (c.id === id ? { ...c, ...updates } : c)))
+    );
     try {
-      await api.updateCollection(id, updates);
+      await api.updateCollection(id, {
+        title: updates.title || existing?.title,
+        ...updates,
+      });
     } catch (err) {
       console.warn('[ArchiveContext] Update saved to local state/fallback only', err);
+    }
+  };
+
+  const reorderCollections = async (newOrderedCollections: Collection[]): Promise<void> => {
+    const reindexed = newOrderedCollections.map((col, idx) => ({
+      ...col,
+      order: idx + 1,
+    }));
+    setCollections(reindexed);
+    try {
+      localStorage.setItem(STORAGE_KEYS.COLLECTIONS, JSON.stringify(reindexed));
+      await api.reorderCollections(reindexed.map((c) => ({ id: c.id, order: c.order })));
+    } catch (err) {
+      console.warn('[ArchiveContext] Collection reorder saved to local state only', err);
     }
   };
 
@@ -607,6 +635,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         addCollection,
         updateCollection,
         deleteCollection,
+        reorderCollections,
         addStudy,
         updateStudy,
         deleteStudy,

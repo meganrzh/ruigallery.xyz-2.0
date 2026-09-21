@@ -264,14 +264,13 @@ export const api = {
   },
 
   async updateCollection(id: string, updates: Partial<Collection>): Promise<Collection> {
-    const payload: Partial<RawCollectionRecord> = {
-      title: updates.title,
-      subtitle: updates.subtitle || null,
-      description: updates.description || null,
-      period: updates.period || null,
-      location_context: updates.locationContext || null,
-      order_index: updates.order,
-    };
+    const payload: Partial<RawCollectionRecord> = {};
+    if (updates.title !== undefined) payload.title = updates.title;
+    if (updates.subtitle !== undefined) payload.subtitle = updates.subtitle || null;
+    if (updates.description !== undefined) payload.description = updates.description || null;
+    if (updates.period !== undefined) payload.period = updates.period || null;
+    if (updates.locationContext !== undefined) payload.location_context = updates.locationContext || null;
+    if (updates.order !== undefined) payload.order_index = updates.order;
 
     const res = await fetch(`/api/collections/${encodeURIComponent(id)}`, {
       method: 'PUT',
@@ -281,6 +280,28 @@ export const api = {
 
     const json = await parseApiResponse<RawCollectionRecord>(res, 'Failed to update collection');
     return mapRecordToCollection(json.data!);
+  },
+
+  async reorderCollections(items: { id: string; order: number }[]): Promise<boolean> {
+    try {
+      const res = await fetch('/api/collections/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map((i) => ({ id: i.id, order_index: i.order })),
+        }),
+      });
+      if (res.ok) return true;
+    } catch {
+      // fallback to individual updates below
+    }
+
+    await Promise.all(
+      items.map((item) =>
+        api.updateCollection(item.id, { order: item.order })
+      )
+    );
+    return true;
   },
 
   async createCollection(collection: Partial<Collection>): Promise<Collection> {

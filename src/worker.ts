@@ -463,6 +463,23 @@ export default {
         }
       }
 
+      // 2.1 /api/collections/reorder
+      if (pathname === '/api/collections/reorder' && method === 'POST') {
+        const body = (await request.json()) as { items?: Array<{ id: string; order_index: number }> };
+        const items = body.items || [];
+        const now = new Date().toISOString();
+        const statements = items.map((item) =>
+          env.DB.prepare('UPDATE collections SET order_index = ?, updated_at = ? WHERE id = ?')
+            .bind(item.order_index, now, item.id)
+        );
+
+        if (statements.length > 0) {
+          await env.DB.batch(statements);
+        }
+
+        return jsonResponse({ success: true, count: statements.length });
+      }
+
       // 3. /api/collections/:id
       const collectionMatch = pathname.match(/^\/api\/collections\/([^/]+)$/);
       if (collectionMatch) {
@@ -485,17 +502,17 @@ export default {
 
         if (method === 'PUT') {
           const body = (await request.json()) as Partial<CollectionRecord>;
-          const title = body.title?.trim();
+          const title = body.title !== undefined ? body.title.trim() : null;
 
-          if (!title) {
-            return errorResponse('Collection title is required', 400);
+          if (body.title !== undefined && !title) {
+            return errorResponse('Collection title cannot be empty', 400);
           }
 
           const now = new Date().toISOString();
 
           const result = await env.DB.prepare(
             `UPDATE collections
-             SET title = ?,
+             SET title = COALESCE(?, title),
                  subtitle = COALESCE(?, subtitle),
                  description = COALESCE(?, description),
                  period = COALESCE(?, period),
