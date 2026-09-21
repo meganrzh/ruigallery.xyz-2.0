@@ -5,11 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 
 [vars]
-# Cloudflare Access Zero Trust configurations.
-# In production, provide CF_ACCESS_AUD and CF_ACCESS_TEAM_DOMAIN via Cloudflare Dashboard
-# or Wrangler secrets:
-#   npx wrangler secret put CF_ACCESS_AUD
-#   npx wrangler secret put CF_ACCESS_TEAM_DOMAIN
+CF_ACCESS_TEAM_DOMAIN = "fragrant-hall-2767.cloudflareaccess.com"
 ENVIRONMENT = "production"
 
 [assets]
