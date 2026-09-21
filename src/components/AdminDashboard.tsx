@@ -123,7 +123,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [newColSubtitle, setNewColSubtitle] = useState('');
   const [newColDesc, setNewColDesc] = useState('');
   const [newColPeriod, setNewColPeriod] = useState('2026 — Present');
-  const [newColOrder, setNewColOrder] = useState<number>(collections.length + 1);
 
   // New Study Form State
   const [newStdTitle, setNewStdTitle] = useState('');
@@ -151,7 +150,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [editColSubtitle, setEditColSubtitle] = useState('');
   const [editColDesc, setEditColDesc] = useState('');
   const [editColPeriod, setEditColPeriod] = useState('');
-  const [editColOrder, setEditColOrder] = useState<number>(1);
   const [isSavingCol, setIsSavingCol] = useState(false);
 
   // Editing existing Study State
@@ -168,8 +166,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     setEditColSubtitle(col.subtitle || '');
     setEditColDesc(col.description);
     setEditColPeriod(col.period);
-    const existingIndex = sortedCollections.findIndex((c) => c.id === col.id);
-    setEditColOrder(col.order ?? (existingIndex !== -1 ? existingIndex + 1 : 1));
   };
 
   const handleSaveCollectionEdit = async (e: React.FormEvent) => {
@@ -182,7 +178,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         subtitle: editColSubtitle,
         description: editColDesc,
         period: editColPeriod,
-        order: Number(editColOrder) || 1,
       });
       setSuccessMessage(`Collection "${editColTitle}" updated and persisted!`);
       setEditingColId(null);
@@ -204,20 +199,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     newOrder.splice(targetIndex, 0, moved);
 
     await reorderCollections(newOrder);
-    setSuccessMessage(`Moved "${moved.title}" to showcase position #${targetIndex + 1}`);
-    setTimeout(() => setSuccessMessage(null), 2500);
-  };
-
-  const handleSetCollectionOrder = async (collectionId: string, newOrder: number) => {
-    const targetIndex = Math.max(0, Math.min(newOrder - 1, sortedCollections.length - 1));
-    const currentIndex = sortedCollections.findIndex((c) => c.id === collectionId);
-    if (currentIndex === -1 || currentIndex === targetIndex) return;
-
-    const newOrderList = [...sortedCollections];
-    const [moved] = newOrderList.splice(currentIndex, 1);
-    newOrderList.splice(targetIndex, 0, moved);
-
-    await reorderCollections(newOrderList);
     setSuccessMessage(`Moved "${moved.title}" to showcase position #${targetIndex + 1}`);
     setTimeout(() => setSuccessMessage(null), 2500);
   };
@@ -301,12 +282,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       subtitle: newColSubtitle,
       description: newColDesc,
       period: newColPeriod,
-      order: Number(newColOrder) || collections.length + 1,
     });
     setNewColTitle('');
     setNewColSubtitle('');
     setNewColDesc('');
-    setNewColOrder(collections.length + 2);
     setSuccessMessage(`Collection "${newColTitle}" created!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
@@ -1033,27 +1012,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                       className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
                     />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
-                      <input
-                        type="text"
-                        value={newColPeriod}
-                        onChange={(e) => setNewColPeriod(e.target.value)}
-                        placeholder="2026 — Present"
-                        className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Showcase Order</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={newColOrder}
-                        onChange={(e) => setNewColOrder(Number(e.target.value) || 1)}
-                        className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
+                    <input
+                      type="text"
+                      value={newColPeriod}
+                      onChange={(e) => setNewColPeriod(e.target.value)}
+                      placeholder="2026 — Present"
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                    />
                   </div>
                   <div>
                     <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
@@ -1138,7 +1105,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                 </div>
                 <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82] bg-[#F4F3EE] px-3 py-1.5 border border-[#E5E3DB]">
                   <ArrowUpDown className="w-3.5 h-3.5 text-[#9E2A2B]" />
-                  <span>Drag cards or use ▲ / ▼ / Pos to reorder</span>
+                  <span>Drag cards or use ▲ / ▼ to reorder</span>
                 </div>
               </div>
 
@@ -1187,26 +1154,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               />
                             </div>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
-                              <input
-                                type="text"
-                                value={editColPeriod}
-                                onChange={(e) => setEditColPeriod(e.target.value)}
-                                className="w-full p-2 bg-white border border-[#E5E3DB]"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Showcase Display Order</label>
-                              <input
-                                type="number"
-                                min={1}
-                                value={editColOrder}
-                                onChange={(e) => setEditColOrder(Number(e.target.value) || 1)}
-                                className="w-full p-2 bg-white border border-[#E5E3DB]"
-                              />
-                            </div>
+                          <div>
+                            <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
+                            <input
+                              type="text"
+                              value={editColPeriod}
+                              onChange={(e) => setEditColPeriod(e.target.value)}
+                              className="w-full p-2 bg-white border border-[#E5E3DB]"
+                            />
                           </div>
                           <div>
                             <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
@@ -1284,23 +1239,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               >
                                 <ChevronDown className="w-4 h-4" />
                               </button>
-                            </div>
-
-                            {/* Direct Position Selector */}
-                            <div className="flex items-center space-x-1 border border-[#E5E3DB] bg-white px-2 py-1 text-xs font-mono-archival">
-                              <span className="text-[#8C8C82] text-[10px] uppercase">Pos:</span>
-                              <select
-                                value={index + 1}
-                                onChange={(e) => handleSetCollectionOrder(collection.id, Number(e.target.value))}
-                                className="bg-transparent font-semibold text-[#141413] outline-none cursor-pointer text-xs"
-                                title="Set specific display order position"
-                              >
-                                {sortedCollections.map((_, i) => (
-                                  <option key={i + 1} value={i + 1}>
-                                    #{i + 1}
-                                  </option>
-                                ))}
-                              </select>
                             </div>
 
                             <button

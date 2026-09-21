@@ -430,7 +430,11 @@ export default {
             return errorResponse('Collection title is required', 400);
           }
 
-          const order_index = typeof body.order_index === 'number' ? body.order_index : 0;
+          let order_index = typeof body.order_index === 'number' && body.order_index > 0 ? body.order_index : null;
+          if (order_index === null) {
+            const maxRow = await env.DB.prepare('SELECT MAX(order_index) as max_order FROM collections').first<{ max_order: number | null }>();
+            order_index = (maxRow?.max_order ?? 0) + 1;
+          }
           const now = new Date().toISOString();
 
           await env.DB.prepare(

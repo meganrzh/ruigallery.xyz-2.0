@@ -474,7 +474,8 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const addCollection = async (colData: Omit<Collection, 'id'>): Promise<Collection> => {
     const tempId = `col-${Date.now()}`;
-    const nextOrder = colData.order ?? (collections.length + 1);
+    const maxOrder = collections.reduce((max, c) => Math.max(max, c.order ?? 0), 0);
+    const nextOrder = colData.order ?? Math.max(collections.length + 1, maxOrder + 1);
     const newCol: Collection = {
       ...colData,
       order: nextOrder,
