@@ -198,4 +198,4 @@ export type AppView =
   | { page: 'entry'; slug: string }
   | { page: 'archive'; initialThread?: string; initialCollection?: string }
   | { page: 'about' }
-  | { page: 'admin'; subTab?: 'entries' | 'work' | 'collections' | 'threads' | 'new-entry' | 'new-work' };
+  | { page: 'admin'; subTab?: 'entries' | 'homepage' | 'collections' | 'threads' | 'new-entry' | 'work' | 'new-work' };

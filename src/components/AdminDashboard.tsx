@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import {
   Entry,
-  CuratedWork,
   Collection,
   Study,
   Thread,
@@ -33,12 +32,11 @@ import {
 } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { EntryEditor } from './EntryEditor';
-import { CuratedWorkEditor } from './CuratedWorkEditor';
-import { CuratedWorkReaderPreview } from './CuratedWorkReaderPreview';
+import { EntryReaderPreview } from './EntryReaderPreview';
 
 interface AdminDashboardProps {
   onNavigate: (view: AppView) => void;
-  subTab?: 'entries' | 'work' | 'collections' | 'threads' | 'new-entry' | 'new-work';
+  subTab?: 'entries' | 'homepage' | 'collections' | 'threads' | 'new-entry' | 'work' | 'new-work';
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subTab = 'entries' }) => {
@@ -51,9 +49,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     addEntry,
     updateEntry,
     deleteEntry,
-    addCuratedWork,
-    updateCuratedWork,
-    deleteCuratedWork,
     addCollection,
     updateCollection,
     addStudy,
@@ -63,18 +58,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     resetToDefaultData,
   } = useArchive();
 
-  const [activeTab, setActiveTab] = useState<'entries' | 'work' | 'collections' | 'threads' | 'new-entry' | 'new-work'>(
-    subTab
+  // Resolve initial tab (aliasing legacy 'work' -> 'homepage', 'new-work' -> 'new-entry')
+  const initialTab =
+    subTab === 'work' ? 'homepage' : subTab === 'new-work' ? 'new-entry' : subTab || 'entries';
+
+  const [activeTab, setActiveTab] = useState<'entries' | 'homepage' | 'collections' | 'threads' | 'new-entry'>(
+    initialTab as any
   );
+
+  // Return tab when saving or cancelling entry editing
+  const [editorSourceTab, setEditorSourceTab] = useState<'entries' | 'homepage'>('entries');
 
   // Unified Entry Authoring & Editing State
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
+  const [previewingEntry, setPreviewingEntry] = useState<Entry | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Curated Work Editing & Reader Preview State
-  const [editingCuratedWork, setEditingCuratedWork] = useState<CuratedWork | null>(null);
-  const [previewingCuratedWork, setPreviewingCuratedWork] = useState<CuratedWork | null>(null);
+  // Archive Database Search & Filters
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterMedium, setFilterMedium] = useState('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'published' | 'draft' | 'featured'>('all');
+
+  // Homepage Curation subsets derived from unified entries
+  const featuredEntries = useMemo(() => {
+    return entries.filter((e) => Boolean(e.featuredOnHome));
+  }, [entries]);
+
+  const unfeaturedEntries = useMemo(() => {
+    return entries.filter((e) => !e.featuredOnHome);
+  }, [entries]);
+
+  const allEntryMediums = useMemo(() => {
+    return Array.from(new Set(entries.map((e) => e.medium).filter((m): m is string => Boolean(m && m.trim()))));
+  }, [entries]);
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter((entry) => {
+      if (filterStatus === 'published' && entry.visibility !== 'published') return false;
+      if (filterStatus === 'draft' && entry.visibility !== 'draft') return false;
+      if (filterStatus === 'featured' && !entry.featuredOnHome) return false;
+      if (filterMedium !== 'all' && entry.medium !== filterMedium) return false;
+      if (searchTerm.trim()) {
+        const query = searchTerm.toLowerCase();
+        const matchesTitle = entry.title.toLowerCase().includes(query);
+        const matchesSlug = entry.slug.toLowerCase().includes(query);
+        const matchesNumber = (entry.entryNumber || '').toLowerCase().includes(query);
+        const matchesMedium = (entry.medium || '').toLowerCase().includes(query);
+        const matchesExcerpt = (entry.excerpt || entry.summary || '').toLowerCase().includes(query);
+        return matchesTitle || matchesSlug || matchesNumber || matchesMedium || matchesExcerpt;
+      }
+      return true;
+    });
+  }, [entries, filterStatus, filterMedium, searchTerm]);
 
   // New Collection Form State
   const [newColTitle, setNewColTitle] = useState('');
@@ -285,23 +321,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-4 border-t border-[#333330] text-xs font-mono-archival">
             <div className="p-2 bg-[#1C1C1A]">
-              <span className="text-[#8C8C82] text-[10px] block">ENTRIES</span>
-              <span className="text-lg font-serif">{entries.length}</span>
+              <span className="text-[#8C8C82] text-[10px] block uppercase">Archive Database</span>
+              <span className="text-lg font-serif">{entries.length} Entries</span>
             </div>
             <div className="p-2 bg-[#1C1C1A]">
-              <span className="text-[#8C8C82] text-[10px] block">CURATED WORKS</span>
-              <span className="text-lg font-serif">{curatedWorks.length}</span>
+              <span className="text-[#8C8C82] text-[10px] block uppercase">Homepage Curation</span>
+              <span className="text-lg font-serif">{featuredEntries.length} Featured</span>
             </div>
             <div className="p-2 bg-[#1C1C1A]">
-              <span className="text-[#8C8C82] text-[10px] block">STUDIES</span>
+              <span className="text-[#8C8C82] text-[10px] block uppercase">Studies</span>
               <span className="text-lg font-serif">{studies.length}</span>
             </div>
             <div className="p-2 bg-[#1C1C1A]">
-              <span className="text-[#8C8C82] text-[10px] block">COLLECTIONS</span>
+              <span className="text-[#8C8C82] text-[10px] block uppercase">Collections</span>
               <span className="text-lg font-serif">{collections.length}</span>
             </div>
             <div className="p-2 bg-[#1C1C1A]">
-              <span className="text-[#8C8C82] text-[10px] block">THREADS</span>
+              <span className="text-[#8C8C82] text-[10px] block uppercase">Threads</span>
               <span className="text-lg font-serif">{threads.length}</span>
             </div>
           </div>
@@ -335,21 +371,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
 
         {/* Navigation Sub-Tabs */}
         <div className="flex flex-wrap gap-2 border-b border-[#E5E3DB] pb-3 text-xs font-mono-archival">
-          <button
-            onClick={() => setActiveTab('entries')}
-            className={`px-3 py-1.5 border transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'entries'
-                ? 'bg-[#141413] text-[#FBFBFA] border-[#141413] font-medium'
-                : 'bg-[#FBFBFA] text-[#4A4A44] border-[#E5E3DB] hover:border-[#141413]'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Entries ({entries.length})</span>
-          </button>
-
+          {/* Tab 1: Author New Entry (The ONLY authoring interface) */}
           <button
             onClick={() => {
               setEditingEntry(null);
+              setEditorSourceTab('entries');
               setActiveTab('new-entry');
             }}
             className={`px-3 py-1.5 border transition-colors flex items-center space-x-1.5 ${
@@ -362,33 +388,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
             <span>{editingEntry && activeTab === 'new-entry' ? `Editing ENTRY ${editingEntry.entryNumber}` : '+ Author New Entry'}</span>
           </button>
 
+          {/* Tab 2: Archive Database */}
           <button
-            onClick={() => setActiveTab('work')}
+            onClick={() => setActiveTab('entries')}
             className={`px-3 py-1.5 border transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'work'
+              activeTab === 'entries'
+                ? 'bg-[#141413] text-[#FBFBFA] border-[#141413] font-medium'
+                : 'bg-[#FBFBFA] text-[#4A4A44] border-[#E5E3DB] hover:border-[#141413]'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Archive Database ({entries.length})</span>
+          </button>
+
+          {/* Tab 3: Homepage Curation */}
+          <button
+            onClick={() => setActiveTab('homepage')}
+            className={`px-3 py-1.5 border transition-colors flex items-center space-x-1.5 ${
+              activeTab === 'homepage'
                 ? 'bg-[#141413] text-[#FBFBFA] border-[#141413] font-medium'
                 : 'bg-[#FBFBFA] text-[#4A4A44] border-[#E5E3DB] hover:border-[#141413]'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Curated Works ({curatedWorks.length})</span>
+            <span>Homepage Curation ({featuredEntries.length})</span>
           </button>
 
-          <button
-            onClick={() => {
-              setEditingCuratedWork(null);
-              setActiveTab('new-work');
-            }}
-            className={`px-3 py-1.5 border transition-colors flex items-center space-x-1.5 ${
-              activeTab === 'new-work'
-                ? 'bg-[#9E2A2B] text-[#FBFBFA] border-[#9E2A2B] font-medium'
-                : 'bg-[#9E2A2B]/10 text-[#9E2A2B] border-[#9E2A2B]/30 hover:bg-[#9E2A2B]/20'
-            }`}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ Author New Work</span>
-          </button>
-
+          {/* Tab 4: Collections & Studies */}
           <button
             onClick={() => setActiveTab('collections')}
             className={`px-3 py-1.5 border transition-colors flex items-center space-x-1.5 ${
@@ -398,9 +424,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
             }`}
           >
             <FolderPlus className="w-3.5 h-3.5" />
-            <span>Collections &amp; Studies</span>
+            <span>Collections &amp; Studies ({collections.length})</span>
           </button>
 
+          {/* Tab 5: Threads */}
           <button
             onClick={() => setActiveTab('threads')}
             className={`px-3 py-1.5 border transition-colors flex items-center space-x-1.5 ${
@@ -414,135 +441,223 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
           </button>
         </div>
 
-        {/* Tab 1: Entries Management */}
+        {/* Tab 1: Archive Database */}
         {activeTab === 'entries' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="font-serif text-xl text-[#141413] font-medium">
-                Cataloged Laboratory Entries
-              </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="font-serif text-xl text-[#141413] font-medium">
+                  Archive Database ({entries.length})
+                </h2>
+                <p className="text-xs font-mono-archival text-[#8C8C82] mt-0.5">
+                  Master management view for all cataloged entries across all mediums. Open any entry to edit in the unified EntryEditor.
+                </p>
+              </div>
               <button
                 onClick={() => {
                   setEditingEntry(null);
+                  setEditorSourceTab('entries');
                   setActiveTab('new-entry');
                 }}
-                className="text-xs font-mono-archival px-3 py-1 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] transition-colors flex items-center space-x-1"
+                className="text-xs font-mono-archival px-4 py-2 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] transition-colors flex items-center space-x-1.5 self-start sm:self-auto"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="w-3.5 h-3.5" />
                 <span>+ Author New Entry</span>
               </button>
             </div>
 
-            <div className="border border-[#E5E3DB] bg-[#FBFBFA] divide-y divide-[#E5E3DB]">
-              {entries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[#F4F3EE] transition-colors"
+            {/* Search & Filter Controls */}
+            <div className="p-4 bg-[#FBFBFA] border border-[#E5E3DB] flex flex-wrap items-center gap-3 text-xs font-mono-archival">
+              <div className="flex-1 min-w-[200px]">
+                <input
+                  type="text"
+                  placeholder="Filter entries by title, medium, slug, #..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-white border border-[#E5E3DB] text-[#141413] placeholder-[#8C8C82] focus:border-[#141413] outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <span className="text-[#8C8C82] text-[10px] uppercase">Medium:</span>
+                <select
+                  value={filterMedium}
+                  onChange={(e) => setFilterMedium(e.target.value)}
+                  className="px-2 py-1.5 bg-white border border-[#E5E3DB] text-[#141413] outline-hidden cursor-pointer"
                 >
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival text-[#8C8C82]">
-                      <span className="text-[#141413] font-semibold">{entry.createdDate}</span>
-                      <span>•</span>
-                      <span>ENTRY {entry.entryNumber}</span>
-                      {entry.ruiRevision ? (
-                        <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] font-medium">{entry.ruiRevision}</span>
-                      ) : (
-                        <span className="px-1 py-0.2 bg-[#EFEFEA] text-[#8C8C82] text-[10px]">NO REV</span>
-                      )}
-                      {entry.medium && (
-                        <span className="px-1.5 py-0.2 bg-[#EFEFEA] border border-[#E5E3DB] text-[#141413] text-[10px] font-medium">
-                          {entry.medium}
+                  <option value="all">All Mediums ({entries.length})</option>
+                  {allEntryMediums.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <span className="text-[#8C8C82] text-[10px] uppercase">Status:</span>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value as any)}
+                  className="px-2 py-1.5 bg-white border border-[#E5E3DB] text-[#141413] outline-hidden cursor-pointer"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="published">Published</option>
+                  <option value="draft">Drafts</option>
+                  <option value="featured">Homepage Featured ({featuredEntries.length})</option>
+                </select>
+              </div>
+
+              {(searchTerm || filterMedium !== 'all' || filterStatus !== 'all') && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterMedium('all');
+                    setFilterStatus('all');
+                  }}
+                  className="text-[11px] text-[#9E2A2B] hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            <div className="border border-[#E5E3DB] bg-[#FBFBFA] divide-y divide-[#E5E3DB]">
+              {filteredEntries.length === 0 ? (
+                <div className="p-8 text-center text-xs font-mono-archival text-[#8C8C82]">
+                  No entries matching the selected filters.
+                </div>
+              ) : (
+                filteredEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[#F4F3EE] transition-colors"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival text-[#8C8C82]">
+                        <span className="text-[#141413] font-semibold">{entry.createdDate}</span>
+                        <span>•</span>
+                        <span className="text-[#9E2A2B] font-semibold">ENTRY {entry.entryNumber}</span>
+                        {entry.ruiRevision ? (
+                          <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] font-medium">{entry.ruiRevision}</span>
+                        ) : (
+                          <span className="px-1 py-0.2 bg-[#EFEFEA] text-[#8C8C82] text-[10px]">NO REV</span>
+                        )}
+                        {entry.medium && (
+                          <span className="px-1.5 py-0.2 bg-[#EFEFEA] border border-[#E5E3DB] text-[#141413] text-[10px] font-medium">
+                            {entry.medium}
+                          </span>
+                        )}
+                        <span
+                          className={`px-1.5 py-0.2 text-[10px] ${
+                            entry.visibility === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {entry.visibility.toUpperCase()}
                         </span>
-                      )}
-                      <span className={`px-1.5 py-0.2 text-[10px] ${entry.visibility === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                        {entry.visibility.toUpperCase()}
-                      </span>
-                      {entry.featuredOnHome && (
-                        <span className="px-1.5 py-0.2 bg-[#141413] text-[#FBFBFA] text-[10px] font-medium">
-                          FEATURED ON HOME
-                        </span>
+                        {entry.featuredOnHome && (
+                          <span className="px-1.5 py-0.2 bg-[#141413] text-[#FBFBFA] text-[10px] font-medium flex items-center space-x-1">
+                            <span>HOMEPAGE</span>
+                            <span className="text-[#8C8C82]">[{entry.homeLayoutWeight || 'standard'}]</span>
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-serif text-base text-[#141413] font-medium truncate">
+                        {entry.title}
+                      </h3>
+                      {entry.subtitle && (
+                        <p className="font-serif text-xs text-[#6E6E66] italic line-clamp-1">
+                          {entry.subtitle}
+                        </p>
                       )}
                     </div>
-                    <h3 className="font-serif text-base text-[#141413] font-medium">
-                      {entry.title}
-                    </h3>
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival shrink-0">
-                    <button
-                      onClick={() => onNavigate({ page: 'entry', slug: entry.slug })}
-                      className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>View</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingEntry(entry);
-                        setActiveTab('new-entry');
-                      }}
-                      className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1"
-                    >
-                      <Edit2 className="w-3 h-3 text-[#9E2A2B]" />
-                      <span>Edit Full Entry</span>
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await updateEntry(entry.id, { featuredOnHome: !entry.featuredOnHome });
-                          setSuccessMessage(`Entry "${entry.title}" ${!entry.featuredOnHome ? 'featured on' : 'removed from'} home.`);
-                          setTimeout(() => setSuccessMessage(null), 3000);
-                        } catch (err: unknown) {
-                          const msg = err instanceof Error ? err.message : 'Error updating entry';
-                          setErrorMessage(`Failed to update homepage featuring: ${msg}`);
-                        }
-                      }}
-                      className={`px-2.5 py-1 border transition-colors ${
-                        entry.featuredOnHome
-                          ? 'bg-[#141413] text-[#FBFBFA] border-[#141413]'
-                          : 'bg-[#FBFBFA] text-[#6E6E66] border-[#E5E3DB] hover:border-[#141413]'
-                      }`}
-                      title="Toggle Homepage Featuring"
-                    >
-                      {entry.featuredOnHome ? 'Featured (Home)' : 'Feature on Home'}
-                    </button>
-                    <button
-                      onClick={async () => {
-                        const newVis = entry.visibility === 'published' ? 'draft' : 'published';
-                        try {
-                          await updateEntry(entry.id, { visibility: newVis });
-                          setSuccessMessage(`Entry visibility updated to ${newVis}.`);
-                          setTimeout(() => setSuccessMessage(null), 3000);
-                        } catch (err: unknown) {
-                          const msg = err instanceof Error ? err.message : 'Error updating entry';
-                          setErrorMessage(`Failed to update entry visibility: ${msg}`);
-                        }
-                      }}
-                      className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#6E6E66]"
-                    >
-                      {entry.visibility === 'published' ? 'Unpublish' : 'Publish'}
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (confirm(`Delete entry "${entry.title}"?`)) {
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival shrink-0">
+                      <button
+                        onClick={() => setPreviewingEntry(entry)}
+                        className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1 transition-colors"
+                        title="Reader Preview Modal"
+                      >
+                        <Eye className="w-3 h-3 text-[#9E2A2B]" />
+                        <span>Preview</span>
+                      </button>
+                      <button
+                        onClick={() => onNavigate({ page: 'entry', slug: entry.slug })}
+                        className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1 transition-colors"
+                        title="Open Public Entry Page"
+                      >
+                        <span>View</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingEntry(entry);
+                          setEditorSourceTab('entries');
+                          setActiveTab('new-entry');
+                        }}
+                        className="px-2.5 py-1 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] border border-[#141413] hover:border-[#9E2A2B] flex items-center space-x-1 transition-colors"
+                        title="Edit Entry in Unified Editor"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        <span>Edit Entry</span>
+                      </button>
+                      <button
+                        onClick={async () => {
                           try {
-                            await deleteEntry(entry.id);
-                            setSuccessMessage(`Entry "${entry.title}" deleted.`);
+                            await updateEntry(entry.id, { featuredOnHome: !entry.featuredOnHome });
+                            setSuccessMessage(`Entry "${entry.title}" ${!entry.featuredOnHome ? 'featured on' : 'removed from'} home.`);
                             setTimeout(() => setSuccessMessage(null), 3000);
                           } catch (err: unknown) {
-                            const msg = err instanceof Error ? err.message : 'Error deleting entry';
-                            setErrorMessage(`Failed to delete entry: ${msg}`);
+                            const msg = err instanceof Error ? err.message : 'Error updating entry';
+                            setErrorMessage(`Failed to update homepage featuring: ${msg}`);
                           }
-                        }
-                      }}
-                      className="p-1 text-[#8C8C82] hover:text-red-700"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                        }}
+                        className={`px-2.5 py-1 border transition-colors ${
+                          entry.featuredOnHome
+                            ? 'bg-[#EAE8E0] text-[#141413] border-[#141413] font-medium'
+                            : 'bg-[#FBFBFA] text-[#6E6E66] border-[#E5E3DB] hover:border-[#141413]'
+                        }`}
+                        title="Toggle Homepage Featuring"
+                      >
+                        {entry.featuredOnHome ? 'Featured (Home)' : 'Feature on Home'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const newVis = entry.visibility === 'published' ? 'draft' : 'published';
+                          try {
+                            await updateEntry(entry.id, { visibility: newVis });
+                            setSuccessMessage(`Entry visibility updated to ${newVis}.`);
+                            setTimeout(() => setSuccessMessage(null), 3000);
+                          } catch (err: unknown) {
+                            const msg = err instanceof Error ? err.message : 'Error updating entry';
+                            setErrorMessage(`Failed to update entry visibility: ${msg}`);
+                          }
+                        }}
+                        className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#6E6E66]"
+                      >
+                        {entry.visibility === 'published' ? 'Unpublish' : 'Publish'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (confirm(`Delete entry "${entry.title}"?`)) {
+                            try {
+                              await deleteEntry(entry.id);
+                              setSuccessMessage(`Entry "${entry.title}" deleted.`);
+                              setTimeout(() => setSuccessMessage(null), 3000);
+                            } catch (err: unknown) {
+                              const msg = err instanceof Error ? err.message : 'Error deleting entry';
+                              setErrorMessage(`Failed to delete entry: ${msg}`);
+                            }
+                          }
+                        }}
+                        className="p-1 text-[#8C8C82] hover:text-red-700"
+                        title="Delete Entry"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}
@@ -559,238 +674,245 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
             onSave={async (entryData, existingId) => {
               if (existingId) {
                 await updateEntry(existingId, entryData);
-                setSuccessMessage(`Entry "${entryData.title}" updated successfully!`);
+                setSuccessMessage(`Entry "${entryData.title}" updated successfully in D1!`);
               } else {
                 await addEntry(entryData);
-                setSuccessMessage(`Entry "${entryData.title}" published successfully!`);
+                setSuccessMessage(`Entry "${entryData.title}" created successfully in D1!`);
               }
               setTimeout(() => setSuccessMessage(null), 4000);
               setEditingEntry(null);
-              setActiveTab('entries');
+              setActiveTab(editorSourceTab);
             }}
             onCancel={() => {
               setEditingEntry(null);
-              setActiveTab('entries');
+              setActiveTab(editorSourceTab);
             }}
           />
         )}
 
-        {/* Tab 3: Curated Works Management */}
-        {activeTab === 'work' && (
+        {/* Tab 3: Homepage Curation */}
+        {activeTab === 'homepage' && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="font-serif text-xl text-[#141413] font-medium">
-                  Curated Works Editorial Management ({curatedWorks.length})
+                  Homepage Curation ({featuredEntries.length})
                 </h2>
                 <p className="text-xs font-mono-archival text-[#8C8C82] mt-0.5">
-                  Long-form visual essays and portfolio projects persisted to Cloudflare D1.
+                  Selected entries presented on the live homepage. Configure presentation weights and curation below.
                 </p>
               </div>
 
-              <button
-                onClick={() => {
-                  setEditingCuratedWork(null);
-                  setActiveTab('new-work');
-                }}
-                className="px-4 py-2 bg-[#9E2A2B] text-[#FBFBFA] hover:bg-[#801C1D] text-xs font-mono-archival flex items-center space-x-1.5 transition-colors self-start sm:self-auto"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ Author New Curated Work</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => onNavigate({ page: 'home' })}
+                  className="px-3 py-1.5 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] text-xs font-mono-archival flex items-center space-x-1 transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>View Live Homepage</span>
+                </button>
+
+                {unfeaturedEntries.length > 0 && (
+                  <select
+                    onChange={async (e) => {
+                      const id = e.target.value;
+                      if (!id) return;
+                      const target = entries.find((x) => x.id === id);
+                      if (!target) return;
+                      try {
+                        await updateEntry(target.id, { featuredOnHome: true });
+                        setSuccessMessage(`Entry "${target.title}" featured on Homepage.`);
+                        setTimeout(() => setSuccessMessage(null), 3000);
+                        e.target.value = '';
+                      } catch (err: unknown) {
+                        const msg = err instanceof Error ? err.message : 'Error featuring entry';
+                        setErrorMessage(`Failed to feature entry: ${msg}`);
+                      }
+                    }}
+                    defaultValue=""
+                    className="px-3 py-1.5 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-xs font-mono-archival text-[#141413] outline-hidden cursor-pointer"
+                  >
+                    <option value="" disabled>
+                      + Feature Entry from Archive ({unfeaturedEntries.length} available)...
+                    </option>
+                    {unfeaturedEntries.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.entryNumber} — {e.title} ({e.medium || 'Visual Work'})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
 
-            <div className="border border-[#E5E3DB] bg-[#FBFBFA] divide-y divide-[#E5E3DB]">
-              {curatedWorks.length === 0 ? (
-                <div className="p-8 text-center text-xs font-mono-archival text-[#8C8C82]">
-                  No curated works currently in D1 archive.
-                </div>
-              ) : (
-                curatedWorks.map((work) => (
+            {featuredEntries.length === 0 ? (
+              <div className="p-12 text-center border border-[#E5E3DB] bg-[#FBFBFA] space-y-3">
+                <Layers className="w-8 h-8 text-[#8C8C82] mx-auto" />
+                <h3 className="font-serif text-lg text-[#141413]">No Entries Featured on Homepage</h3>
+                <p className="text-xs font-mono-archival text-[#8C8C82] max-w-md mx-auto">
+                  Entries are selected for the homepage through the unified Archive Database. Browse the Archive Database and click "Feature on Home" on any entry to curate it here.
+                </p>
+                <button
+                  onClick={() => setActiveTab('entries')}
+                  className="mt-2 px-4 py-2 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] text-xs font-mono-archival transition-colors inline-flex items-center space-x-1.5"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Open Archive Database</span>
+                </button>
+              </div>
+            ) : (
+              <div className="border border-[#E5E3DB] bg-[#FBFBFA] divide-y divide-[#E5E3DB]">
+                {featuredEntries.map((entry) => (
                   <div
-                    key={work.id}
+                    key={entry.id}
                     className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-[#F4F3EE] transition-colors"
                   >
-                    <div className="flex items-start space-x-4">
-                      <img
-                        src={work.coverImage}
-                        alt={work.title}
-                        className="w-20 h-20 object-cover border border-[#E5E3DB] shrink-0 bg-[#EAE8E0]"
-                      />
-                      <div className="space-y-1.5">
+                    <div className="flex items-start space-x-4 min-w-0">
+                      {entry.coverImage ? (
+                        <img
+                          src={entry.coverImage}
+                          alt={entry.coverImageAlt || entry.title}
+                          className="w-24 h-24 object-cover border border-[#E5E3DB] shrink-0 bg-[#EAE8E0]"
+                        />
+                      ) : (
+                        <div className="w-24 h-24 border border-[#E5E3DB] bg-[#EAE8E0] shrink-0 flex flex-col items-center justify-center text-[#8C8C82] p-2 text-center">
+                          <FileText className="w-6 h-6 mb-1 text-[#8C8C82]" />
+                          <span className="text-[9px] font-mono-archival">NO COVER</span>
+                        </div>
+                      )}
+                      <div className="space-y-1.5 min-w-0">
                         <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival text-[#8C8C82]">
-                          <span className="text-[#9E2A2B] font-semibold">{work.workType}</span>
+                          <span className="text-[#9E2A2B] font-semibold">ENTRY {entry.entryNumber}</span>
                           <span>•</span>
-                          <span>{work.year}</span>
-                          {work.date && (
-                            <>
-                              <span>•</span>
-                              <span>{work.date}</span>
-                            </>
-                          )}
-                          {work.archivalDate && (
-                            <>
-                              <span>•</span>
-                              <span className="text-[#3C3C38] font-mono-archival bg-[#EAE8E0] px-1 py-0.5 text-[10px]" title="Canonical Archival Date">
-                                {work.archivalDate}
-                              </span>
-                            </>
-                          )}
+                          <span className="px-1.5 py-0.2 bg-[#EFEFEA] border border-[#E5E3DB] text-[#141413] text-[10px] font-medium">
+                            {entry.medium || 'Visual Work'}
+                          </span>
+                          <span>•</span>
+                          <span>{entry.displayDate || entry.createdDate}</span>
                           <span
                             className={`px-1.5 py-0.2 text-[10px] ${
-                              work.visibility === 'published'
+                              entry.visibility === 'published'
                                 ? 'bg-emerald-100 text-emerald-800'
-                                : work.visibility === 'draft'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-gray-200 text-gray-700'
+                                : 'bg-amber-100 text-amber-800'
                             }`}
                           >
-                            {work.visibility.toUpperCase()}
+                            {entry.visibility.toUpperCase()}
                           </span>
-                          <span className="px-1.5 py-0.2 bg-[#EAE8E0] text-[#141413] text-[10px]">
-                            {work.homeLayoutWeight.toUpperCase()}
+                          <span className="px-1.5 py-0.2 bg-[#141413] text-[#FBFBFA] text-[10px] font-medium uppercase">
+                            {entry.homeLayoutWeight || 'standard'}
                           </span>
-                          {work.featuredOnHome && (
-                            <span className="px-1.5 py-0.2 bg-[#141413] text-[#FBFBFA] text-[10px] font-medium">
-                              FEATURED ON HOME
-                            </span>
-                          )}
                         </div>
 
-                        <h3 className="font-serif text-lg text-[#141413] font-medium">
-                          {work.title}
+                        <h3 className="font-serif text-lg text-[#141413] font-medium truncate">
+                          {entry.title}
                         </h3>
 
-                        {work.subtitle && (
-                          <p className="font-serif text-xs text-[#6E6E66] italic">
-                            {work.subtitle}
+                        {entry.subtitle && (
+                          <p className="font-serif text-xs text-[#6E6E66] italic line-clamp-1">
+                            {entry.subtitle}
                           </p>
                         )}
 
                         <p className="font-serif text-xs text-[#5C5C54] line-clamp-2 max-w-2xl">
-                          {work.excerpt}
+                          {entry.excerpt || entry.summary || 'No excerpt available.'}
                         </p>
 
-                        <div className="flex items-center gap-3 text-[11px] font-mono-archival text-[#8C8C82] pt-1">
-                          <span>{work.bodyBlocks?.length || 0} Body Blocks</span>
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono-archival text-[#8C8C82] pt-1">
+                          <span>{entry.blocks?.length || 0} Body Blocks</span>
                           <span>•</span>
-                          <span>{work.relatedStudyIds?.length || 0} Studies</span>
+                          <span>{entry.relatedStudyIds?.length || 0} Studies</span>
                           <span>•</span>
-                          <span>{work.relatedEntryIds?.length || 0} Entries</span>
+                          <span>{entry.relatedEntryIds?.length || 0} Related Entries</span>
                           <span>•</span>
-                          <span>slug: /{work.slug}</span>
+                          <span>slug: /entry/{entry.slug}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival shrink-0 pt-2 lg:pt-0">
+                      {/* Home Layout Weight Selector */}
+                      <div className="flex items-center space-x-1.5 bg-[#FBFBFA] border border-[#E5E3DB] px-2 py-1">
+                        <span className="text-[10px] text-[#8C8C82] uppercase">Weight:</span>
+                        <select
+                          value={entry.homeLayoutWeight || 'standard'}
+                          onChange={async (e) => {
+                            const newWeight = e.target.value as Entry['homeLayoutWeight'];
+                            try {
+                              await updateEntry(entry.id, { homeLayoutWeight: newWeight });
+                              setSuccessMessage(`Layout weight for "${entry.title}" set to ${newWeight}.`);
+                              setTimeout(() => setSuccessMessage(null), 3000);
+                            } catch (err: unknown) {
+                              const msg = err instanceof Error ? err.message : 'Error updating weight';
+                              setErrorMessage(`Failed to update layout weight: ${msg}`);
+                            }
+                          }}
+                          className="bg-transparent text-xs font-mono-archival text-[#141413] focus:outline-hidden cursor-pointer"
+                        >
+                          <option value="standard">Standard (1 Col)</option>
+                          <option value="dominant">Dominant (2 Col)</option>
+                          <option value="horizontal-wide">Horizontal Wide</option>
+                          <option value="editorial-compact">Editorial Compact</option>
+                        </select>
+                      </div>
+
+                      {/* Reader Preview Modal */}
                       <button
-                        onClick={() => setPreviewingCuratedWork(work)}
-                        className="px-2.5 py-1 bg-white border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1"
+                        onClick={() => setPreviewingEntry(entry)}
+                        className="px-2.5 py-1 bg-white border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1 transition-colors"
                         title="Open Reader Preview Modal"
                       >
                         <Eye className="w-3 h-3 text-[#9E2A2B]" />
-                        <span>Reader Preview</span>
+                        <span>Preview</span>
                       </button>
 
+                      {/* Live Entry Page */}
                       <button
-                        onClick={() => onNavigate({ page: 'work', slug: work.slug })}
-                        className="px-2.5 py-1 bg-white border border-[#E5E3DB] hover:border-[#141413] text-[#6E6E66]"
-                        title="Open Live Public Work Page"
+                        onClick={() => onNavigate({ page: 'entry', slug: entry.slug })}
+                        className="px-2.5 py-1 bg-white border border-[#E5E3DB] hover:border-[#141413] text-[#6E6E66] transition-colors"
+                        title="Open Live Public Entry Page"
                       >
-                        Live Page
+                        Live Entry
                       </button>
 
+                      {/* Remove from Homepage */}
                       <button
                         onClick={async () => {
                           try {
-                            await updateCuratedWork(work.id, { featuredOnHome: !work.featuredOnHome });
-                            setSuccessMessage(
-                              `Curated work "${work.title}" ${!work.featuredOnHome ? 'featured on' : 'removed from'} Home.`
-                            );
+                            await updateEntry(entry.id, { featuredOnHome: false });
+                            setSuccessMessage(`Removed "${entry.title}" from Homepage.`);
                             setTimeout(() => setSuccessMessage(null), 3000);
                           } catch (err: unknown) {
-                            const msg = err instanceof Error ? err.message : 'Error updating home feature';
-                            setErrorMessage(`Failed to update homepage status: ${msg}`);
+                            const msg = err instanceof Error ? err.message : 'Error updating entry';
+                            setErrorMessage(`Failed to remove entry from homepage: ${msg}`);
                           }
                         }}
-                        className={`px-2.5 py-1 border text-xs transition-colors ${
-                          work.featuredOnHome
-                            ? 'bg-[#141413] text-[#FBFBFA] border-[#141413]'
-                            : 'bg-white text-[#6E6E66] border-[#E5E3DB] hover:border-[#141413]'
-                        }`}
+                        className="px-2.5 py-1 bg-white border border-[#E5E3DB] hover:border-red-600 hover:text-red-700 text-[#6E6E66] transition-colors"
+                        title="Remove from Homepage"
                       >
-                        {work.featuredOnHome ? 'Featured' : 'Feature on Home'}
+                        Remove from Home
                       </button>
 
+                      {/* Edit Entry in unified EntryEditor */}
                       <button
                         onClick={() => {
-                          setEditingCuratedWork(work);
-                          setActiveTab('new-work');
+                          setEditingEntry(entry);
+                          setEditorSourceTab('homepage');
+                          setActiveTab('new-entry');
                         }}
-                        className="px-2.5 py-1 bg-white border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1"
+                        className="px-2.5 py-1 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] border border-[#141413] hover:border-[#9E2A2B] transition-colors flex items-center space-x-1"
+                        title="Edit Entry in Unified Editor"
                       >
-                        <Edit3 className="w-3 h-3" />
-                        <span>Edit</span>
-                      </button>
-
-                      <button
-                        onClick={async () => {
-                          if (confirm(`Delete curated work "${work.title}"? This cannot be undone.`)) {
-                            try {
-                              await deleteCuratedWork(work.id);
-                              setSuccessMessage(`Curated work "${work.title}" deleted.`);
-                              setTimeout(() => setSuccessMessage(null), 3000);
-                            } catch (err: unknown) {
-                              const msg = err instanceof Error ? err.message : 'Error deleting curated work';
-                              setErrorMessage(`Failed to delete curated work: ${msg}`);
-                            }
-                          }
-                        }}
-                        className="p-1 text-[#8C8C82] hover:text-red-700"
-                        title="Delete Work"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Edit2 className="w-3 h-3" />
+                        <span>Edit Entry</span>
                       </button>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Tab 3.5: Author / Edit Curated Work */}
-        {activeTab === 'new-work' && (
-          <CuratedWorkEditor
-            key={editingCuratedWork?.id || 'new-work'}
-            initialWork={editingCuratedWork}
-            studies={studies}
-            entries={entries}
-            onSave={async (workData, existingId) => {
-              try {
-                if (existingId) {
-                  await updateCuratedWork(existingId, workData);
-                  setSuccessMessage(`Curated work "${workData.title}" updated successfully in D1!`);
-                } else {
-                  await addCuratedWork(workData);
-                  setSuccessMessage(`Curated work "${workData.title}" published successfully to D1!`);
-                }
-                setTimeout(() => setSuccessMessage(null), 4000);
-                setEditingCuratedWork(null);
-                setActiveTab('work');
-              } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : 'Persistent mutation failed';
-                setErrorMessage(`Failed to save curated work to D1: ${msg}`);
-                throw err;
-              }
-            }}
-            onCancel={() => {
-              setEditingCuratedWork(null);
-              setActiveTab('work');
-            }}
-          />
-        )}
 
         {/* Tab 4: Collections & Studies */}
         {activeTab === 'collections' && (
@@ -1202,13 +1324,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         </div>
       </div>
 
-      {/* Reader Preview Modal for Curated Works */}
-      {previewingCuratedWork && (
-        <CuratedWorkReaderPreview
-          work={previewingCuratedWork}
-          relatedStudies={studies.filter((s) => previewingCuratedWork.relatedStudyIds?.includes(s.id))}
-          relatedEntries={entries.filter((e) => previewingCuratedWork.relatedEntryIds?.includes(e.id))}
-          onClose={() => setPreviewingCuratedWork(null)}
+      {/* Reader Preview Modal for Entries */}
+      {previewingEntry && (
+        <EntryReaderPreview
+          entry={previewingEntry}
+          collection={collections.find((c) => c.id === previewingEntry.collectionId)}
+          study={studies.find((s) => s.id === previewingEntry.studyId)}
+          threads={threads.filter((t) => previewingEntry.threadIds?.includes(t.id))}
+          relatedStudies={studies.filter((s) => previewingEntry.relatedStudyIds?.includes(s.id))}
+          relatedEntries={entries.filter((e) => previewingEntry.relatedEntryIds?.includes(e.id))}
+          onClose={() => setPreviewingEntry(null)}
         />
       )}
     </div>
