@@ -25,10 +25,14 @@ export const EntryMetadataHeader: React.FC<EntryMetadataHeaderProps> = ({
           <span className="font-medium text-[#141413]">
             ENTRY {entry.entryNumber}
           </span>
-          <span className="text-[#8C8C82]">•</span>
-          <span className="px-1.5 py-0.5 bg-[#FBFBFA] border border-[#D5D3CB] text-[#9E2A2B] font-semibold">
-            {entry.ruiRevision}
-          </span>
+          {entry.ruiRevision && (
+            <>
+              <span className="text-[#8C8C82]">•</span>
+              <span className="px-1.5 py-0.5 bg-[#FBFBFA] border border-[#D5D3CB] text-[#9E2A2B] font-semibold">
+                {entry.ruiRevision}
+              </span>
+            </>
+          )}
           {entry.medium && (
             <>
               <span className="text-[#8C8C82]">•</span>

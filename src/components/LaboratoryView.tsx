@@ -371,9 +371,11 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate, filt
                               <span className="text-[#141413]">
                                 ENTRY {entry.entryNumber}
                               </span>
-                              <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] text-[10px] font-medium">
-                                {entry.ruiRevision}
-                              </span>
+                              {entry.ruiRevision && (
+                                <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] text-[10px] font-medium">
+                                  {entry.ruiRevision}
+                                </span>
+                              )}
                             </div>
                             {entry.location && (
                               <span className="text-[11px] text-[#8C8C82]">

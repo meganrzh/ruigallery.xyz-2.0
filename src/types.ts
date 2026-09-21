@@ -32,8 +32,11 @@ export type RuiRevision = 'REV 00' | 'REV 01' | 'REV 02' | 'REV 03' | string;
 
 export type EntryBlock =
   | { type: 'paragraph'; content: string }
+  | { type: 'text'; content: string }
   | { type: 'fragment'; note: string; source?: string }
-  | { type: 'image'; url: string; caption?: string; alt?: string; scanInfo?: string }
+  | { type: 'image'; url: string; caption?: string; alt?: string; scanInfo?: string; fullWidth?: boolean; aspectRatio?: string }
+  | { type: 'pullquote'; quote: string; attribution?: string }
+  | { type: 'two_column_images'; url1: string; caption1?: string; alt1?: string; url2: string; caption2?: string; alt2?: string }
   | { type: 'reference'; citation: string; link?: string; year?: string }
   | { type: 'list'; items: string[]; title?: string }
   | { type: 'observation'; date?: string; coordinates?: string; text: string; label?: string }
@@ -48,24 +51,37 @@ export const INITIAL_ENTRY_MEDIUMS = [
 
 export type EntryMedium = (typeof INITIAL_ENTRY_MEDIUMS)[number] | (string & {});
 
+export type HomeLayoutWeight = 'dominant' | 'standard' | 'editorial-compact' | 'horizontal-wide';
+
 export interface Entry {
   id: string;
   slug: string;
-  entryNumber: string; // e.g. "001", "004", "014"
-  collectionId: string;
-  studyId: string;
+  entryNumber: string; // e.g. "001", "004", "014", "015"
+  collectionId?: string;
+  studyId?: string; // Optional: entries can exist outside of a study
   title: string;
-  ruiRevision: RuiRevision;
+  subtitle?: string;
+  ruiRevision?: RuiRevision | null; // Nullable for works without revision
   medium?: EntryMedium;
-  createdDate: string;
+  summary?: string;
+  excerpt?: string;
+  location?: string;
+  createdDate: string; // Archival date YYYY.MM.DD or YYYY-MM-DD
+  displayDate?: string; // Human display date (e.g. "August 2026")
   lastModifiedDate?: string;
   publishedDate?: string;
-  location?: string;
+  featuredOnHome?: boolean;
+  homeLayoutWeight?: HomeLayoutWeight;
+  coverImage?: string;
+  coverImageCaption?: string;
+  coverImageAlt?: string;
+  blocks: EntryBlock[];
+  metadata?: Record<string, string>;
   threadIds: string[];
   relatedStudyIds?: string[];
-  summary?: string;
-  blocks: EntryBlock[];
+  relatedEntryIds?: string[];
   visibility: 'published' | 'draft' | 'hidden';
+  order?: number;
 }
 
 export interface Thread {

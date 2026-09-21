@@ -12,6 +12,7 @@ export const EntryBodyRenderer: React.FC<EntryBodyRendererProps> = ({ blocks }) 
       {blocks.map((block, idx) => {
         switch (block.type) {
           case 'paragraph':
+          case 'text':
             return (
               <p
                 key={idx}
@@ -19,6 +20,56 @@ export const EntryBodyRenderer: React.FC<EntryBodyRendererProps> = ({ blocks }) 
               >
                 {block.content}
               </p>
+            );
+
+          case 'pullquote':
+            return (
+              <div key={idx} className="my-10 py-8 px-8 bg-[#F4F3EE] border-y border-[#E5E3DB] text-center space-y-3">
+                <blockquote className="font-serif text-xl sm:text-2xl text-[#141413] italic leading-relaxed">
+                  “{block.quote}”
+                </blockquote>
+                {block.attribution && (
+                  <cite className="block text-xs font-mono-archival text-[#8C8C82] not-italic">
+                    — {block.attribution}
+                  </cite>
+                )}
+              </div>
+            );
+
+          case 'two_column_images':
+            return (
+              <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-6 my-10">
+                <div className="space-y-2">
+                  <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-1">
+                    <img
+                      src={block.url1}
+                      alt={block.alt1 || 'Plate view A'}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-64 sm:h-80 object-cover"
+                    />
+                  </div>
+                  {block.caption1 && (
+                    <p className="text-[11px] font-mono-archival text-[#8C8C82] text-center">
+                      {block.caption1}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-1">
+                    <img
+                      src={block.url2}
+                      alt={block.alt2 || 'Plate view B'}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-64 sm:h-80 object-cover"
+                    />
+                  </div>
+                  {block.caption2 && (
+                    <p className="text-[11px] font-mono-archival text-[#8C8C82] text-center">
+                      {block.caption2}
+                    </p>
+                  )}
+                </div>
+              </div>
             );
 
           case 'fragment':

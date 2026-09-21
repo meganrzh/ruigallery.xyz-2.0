@@ -32,6 +32,7 @@ import {
   INITIAL_ENTRY_MEDIUMS,
 } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { EntryEditor } from './EntryEditor';
 import { CuratedWorkEditor } from './CuratedWorkEditor';
 import { CuratedWorkReaderPreview } from './CuratedWorkReaderPreview';
 
@@ -66,51 +67,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     subTab
   );
 
-  // New Entry Form State
-  const [entryTitle, setEntryTitle] = useState('');
-  const [entryCollectionId, setEntryCollectionId] = useState(collections[0]?.id || '');
-  const [entryStudyId, setEntryStudyId] = useState(studies[0]?.id || '');
-  const [entryRevision, setEntryRevision] = useState<RuiRevision>('REV 00');
-  const [entryLocation, setEntryLocation] = useState('San Francisco, CA');
-  const [entrySummary, setEntrySummary] = useState('');
-  const [entryThreadIds, setEntryThreadIds] = useState<string[]>([]);
-  const [entryRelatedStudyIds, setEntryRelatedStudyIds] = useState<string[]>([]);
-  const [entryVisibility, setEntryVisibility] = useState<'published' | 'draft'>('published');
-  const [entryBlocks, setEntryBlocks] = useState<EntryBlock[]>([
-    { type: 'paragraph', content: 'Type primary research observation or narrative note here...' },
-  ]);
-
-  // Distinct Mediums available in archive (combines initial taxonomy + any custom entries)
-  const existingMediums = useMemo(() => {
-    const set = new Set<string>(INITIAL_ENTRY_MEDIUMS);
-    entries.forEach((e) => {
-      if (e.medium && e.medium.trim()) {
-        set.add(e.medium.trim());
-      }
-    });
-    return Array.from(set);
-  }, [entries]);
-
-  // New Entry Medium state
-  const [entryMedium, setEntryMedium] = useState<string>('Visual Work');
-  const [customEntryMedium, setCustomEntryMedium] = useState('');
-
-  // Editing existing Entry state
+  // Unified Entry Authoring & Editing State
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
-  const [editEntryTitle, setEditEntryTitle] = useState('');
-  const [editEntryMedium, setEditEntryMedium] = useState('');
-  const [editCustomEntryMedium, setEditCustomEntryMedium] = useState('');
-  const [editEntryRevision, setEditEntryRevision] = useState<RuiRevision>('REV 00');
-  const [editEntryCollectionId, setEditEntryCollectionId] = useState('');
-  const [editEntryStudyId, setEditEntryStudyId] = useState('');
-  const [editEntryLocation, setEditEntryLocation] = useState('');
-  const [editEntrySummary, setEditEntrySummary] = useState('');
-  const [editEntryVisibility, setEditEntryVisibility] = useState<'published' | 'draft'>('published');
-  const [editEntryThreadIds, setEditEntryThreadIds] = useState<string[]>([]);
-  const [isSavingEntry, setIsSavingEntry] = useState(false);
-
-  // Preview Modal
-  const [previewEntry, setPreviewEntry] = useState<Entry | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -206,175 +164,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       alert(`Failed to save study: ${err?.message || 'Error'}`);
     } finally {
       setIsSavingStudy(false);
-    }
-  };
-
-  // Helper for available studies based on collection
-  const availableStudies = studies.filter((s) => s.collectionId === entryCollectionId);
-
-  // Handle adding block to new entry
-  const addBlock = (type: 'paragraph' | 'fragment' | 'image' | 'observation' | 'reference' | 'list') => {
-    switch (type) {
-      case 'paragraph':
-        setEntryBlocks([...entryBlocks, { type: 'paragraph', content: '' }]);
-        break;
-      case 'fragment':
-        setEntryBlocks([...entryBlocks, { type: 'fragment', note: '', source: '' }]);
-        break;
-      case 'image':
-        setEntryBlocks([
-          ...entryBlocks,
-          {
-            type: 'image',
-            url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=1200&q=80',
-            caption: 'Archival documentation scan.',
-          },
-        ]);
-        break;
-      case 'observation':
-        setEntryBlocks([
-          ...entryBlocks,
-          {
-            type: 'observation',
-            date: new Date().toISOString().slice(0, 10).replace(/-/g, '.'),
-            coordinates: '37.7749° N, 122.4194° W',
-            text: '',
-          },
-        ]);
-        break;
-      case 'reference':
-        setEntryBlocks([...entryBlocks, { type: 'reference', citation: '', link: '' }]);
-        break;
-      case 'list':
-        setEntryBlocks([...entryBlocks, { type: 'list', items: ['Field measurement 1', 'Field measurement 2'] }]);
-        break;
-    }
-  };
-
-  const removeBlock = (index: number) => {
-    setEntryBlocks(entryBlocks.filter((_, i) => i !== index));
-  };
-
-  const updateBlock = (index: number, updated: EntryBlock) => {
-    const next = [...entryBlocks];
-    next[index] = updated;
-    setEntryBlocks(next);
-  };
-
-  const startEditEntry = (entry: Entry) => {
-    setEditingEntry(entry);
-    setEditEntryTitle(entry.title);
-    setEditEntryRevision(entry.ruiRevision);
-    setEditEntryCollectionId(entry.collectionId);
-    setEditEntryStudyId(entry.studyId);
-    setEditEntryLocation(entry.location || '');
-    setEditEntrySummary(entry.summary || '');
-    setEditEntryVisibility(entry.visibility);
-    setEditEntryThreadIds([...entry.threadIds]);
-
-    if (entry.medium) {
-      if (existingMediums.includes(entry.medium)) {
-        setEditEntryMedium(entry.medium);
-        setEditCustomEntryMedium('');
-      } else {
-        setEditEntryMedium('__custom__');
-        setEditCustomEntryMedium(entry.medium);
-      }
-    } else {
-      setEditEntryMedium('__none__');
-      setEditCustomEntryMedium('');
-    }
-  };
-
-  const handleSaveEntryEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingEntry || !editEntryTitle.trim()) return;
-    setIsSavingEntry(true);
-
-    let finalMedium: string | null = null;
-    if (editEntryMedium === '__custom__') {
-      finalMedium = editCustomEntryMedium.trim() || null;
-    } else if (editEntryMedium && editEntryMedium !== '__none__') {
-      finalMedium = editEntryMedium.trim();
-    }
-
-    try {
-      await updateEntry(editingEntry.id, {
-        title: editEntryTitle,
-        medium: finalMedium || undefined,
-        ruiRevision: editEntryRevision,
-        collectionId: editEntryCollectionId,
-        studyId: editEntryStudyId,
-        location: editEntryLocation,
-        summary: editEntrySummary,
-        visibility: editEntryVisibility,
-        threadIds: editEntryThreadIds,
-      });
-      setSuccessMessage(`Entry "${editEntryTitle}" updated successfully.`);
-      setEditingEntry(null);
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error updating entry';
-      setErrorMessage(`Failed to update entry: ${msg}`);
-    } finally {
-      setIsSavingEntry(false);
-    }
-  };
-
-  // Submit Entry
-  const handlePublishEntry = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!entryTitle.trim()) {
-      alert('Please enter an Entry Title.');
-      return;
-    }
-
-    const nextEntryNumber = String(entries.length + 1).padStart(3, '0');
-    const slug = `entry-${nextEntryNumber}-${entryTitle
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '')}`;
-
-    const createdDate = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
-
-    let finalNewMedium: string | undefined = undefined;
-    if (entryMedium === '__custom__') {
-      finalNewMedium = customEntryMedium.trim() || undefined;
-    } else if (entryMedium && entryMedium !== '__none__') {
-      finalNewMedium = entryMedium.trim() || undefined;
-    }
-
-    try {
-      await addEntry({
-        slug,
-        entryNumber: nextEntryNumber,
-        collectionId: entryCollectionId,
-        studyId: entryStudyId || availableStudies[0]?.id || studies[0]?.id,
-        title: entryTitle,
-        ruiRevision: entryRevision,
-        medium: finalNewMedium,
-        createdDate,
-        publishedDate: createdDate,
-        location: entryLocation,
-        threadIds: entryThreadIds,
-        relatedStudyIds: entryRelatedStudyIds,
-        summary: entrySummary,
-        blocks: entryBlocks,
-        visibility: entryVisibility,
-      });
-
-      setSuccessMessage(`Entry ${nextEntryNumber} published successfully to archive!`);
-      setTimeout(() => setSuccessMessage(null), 4000);
-      setActiveTab('entries');
-
-      // Reset Form
-      setEntryTitle('');
-      setEntrySummary('');
-      setEntryBlocks([{ type: 'paragraph', content: '' }]);
-      setCustomEntryMedium('');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error publishing entry';
-      setErrorMessage(`Failed to publish entry to persistent store: ${msg}`);
     }
   };
 
@@ -559,7 +348,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
           </button>
 
           <button
-            onClick={() => setActiveTab('new-entry')}
+            onClick={() => {
+              setEditingEntry(null);
+              setActiveTab('new-entry');
+            }}
             className={`px-3 py-1.5 border transition-colors flex items-center space-x-1.5 ${
               activeTab === 'new-entry'
                 ? 'bg-[#9E2A2B] text-[#FBFBFA] border-[#9E2A2B] font-medium'
@@ -567,7 +359,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
             }`}
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>+ Author New Entry</span>
+            <span>{editingEntry && activeTab === 'new-entry' ? `Editing ENTRY ${editingEntry.entryNumber}` : '+ Author New Entry'}</span>
           </button>
 
           <button
@@ -630,11 +422,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                 Cataloged Laboratory Entries
               </h2>
               <button
-                onClick={() => setActiveTab('new-entry')}
+                onClick={() => {
+                  setEditingEntry(null);
+                  setActiveTab('new-entry');
+                }}
                 className="text-xs font-mono-archival px-3 py-1 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] transition-colors flex items-center space-x-1"
               >
                 <Plus className="w-3 h-3" />
-                <span>New Entry</span>
+                <span>+ Author New Entry</span>
               </button>
             </div>
 
@@ -642,14 +437,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
               {entries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#F4F3EE]"
+                  className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[#F4F3EE] transition-colors"
                 >
-                    <div className="space-y-1">
-                    <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82]">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival text-[#8C8C82]">
                       <span className="text-[#141413] font-semibold">{entry.createdDate}</span>
                       <span>•</span>
                       <span>ENTRY {entry.entryNumber}</span>
-                      <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B]">{entry.ruiRevision}</span>
+                      {entry.ruiRevision ? (
+                        <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] font-medium">{entry.ruiRevision}</span>
+                      ) : (
+                        <span className="px-1 py-0.2 bg-[#EFEFEA] text-[#8C8C82] text-[10px]">NO REV</span>
+                      )}
                       {entry.medium && (
                         <span className="px-1.5 py-0.2 bg-[#EFEFEA] border border-[#E5E3DB] text-[#141413] text-[10px] font-medium">
                           {entry.medium}
@@ -658,13 +457,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                       <span className={`px-1.5 py-0.2 text-[10px] ${entry.visibility === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                         {entry.visibility.toUpperCase()}
                       </span>
+                      {entry.featuredOnHome && (
+                        <span className="px-1.5 py-0.2 bg-[#141413] text-[#FBFBFA] text-[10px] font-medium">
+                          FEATURED ON HOME
+                        </span>
+                      )}
                     </div>
                     <h3 className="font-serif text-base text-[#141413] font-medium">
                       {entry.title}
                     </h3>
                   </div>
 
-                  <div className="flex items-center space-x-2 text-xs font-mono-archival shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival shrink-0">
                     <button
                       onClick={() => onNavigate({ page: 'entry', slug: entry.slug })}
                       className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1"
@@ -673,11 +477,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                       <span>View</span>
                     </button>
                     <button
-                      onClick={() => startEditEntry(entry)}
+                      onClick={() => {
+                        setEditingEntry(entry);
+                        setActiveTab('new-entry');
+                      }}
                       className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1"
                     >
                       <Edit2 className="w-3 h-3 text-[#9E2A2B]" />
-                      <span>Edit</span>
+                      <span>Edit Full Entry</span>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await updateEntry(entry.id, { featuredOnHome: !entry.featuredOnHome });
+                          setSuccessMessage(`Entry "${entry.title}" ${!entry.featuredOnHome ? 'featured on' : 'removed from'} home.`);
+                          setTimeout(() => setSuccessMessage(null), 3000);
+                        } catch (err: unknown) {
+                          const msg = err instanceof Error ? err.message : 'Error updating entry';
+                          setErrorMessage(`Failed to update homepage featuring: ${msg}`);
+                        }
+                      }}
+                      className={`px-2.5 py-1 border transition-colors ${
+                        entry.featuredOnHome
+                          ? 'bg-[#141413] text-[#FBFBFA] border-[#141413]'
+                          : 'bg-[#FBFBFA] text-[#6E6E66] border-[#E5E3DB] hover:border-[#141413]'
+                      }`}
+                      title="Toggle Homepage Featuring"
+                    >
+                      {entry.featuredOnHome ? 'Featured (Home)' : 'Feature on Home'}
                     </button>
                     <button
                       onClick={async () => {
@@ -717,625 +544,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                 </div>
               ))}
             </div>
-
-            {/* Entry Edit Modal */}
-            {editingEntry && (
-              <div className="fixed inset-0 z-50 bg-[#141413]/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-                <div className="bg-[#FBFBFA] border border-[#141413] max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-xl my-8">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#E5E3DB]">
-                    <div>
-                      <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82] tracking-wider uppercase mb-1">
-                        <span>ENTRY {editingEntry.entryNumber}</span>
-                        <span>•</span>
-                        <span className="text-[#9E2A2B] font-semibold">EDIT RECORD & MEDIUM</span>
-                      </div>
-                      <h2 className="font-serif text-xl sm:text-2xl text-[#141413] font-medium">
-                        Edit Entry Metadata
-                      </h2>
-                    </div>
-                    <button
-                      onClick={() => setEditingEntry(null)}
-                      className="p-1 text-[#8C8C82] hover:text-[#141413]"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-
-                  <form onSubmit={handleSaveEntryEdit} className="space-y-4 font-mono-archival text-xs">
-                    {/* Title */}
-                    <div>
-                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                        Entry Title *
-                      </label>
-                      <input
-                        type="text"
-                        value={editEntryTitle}
-                        onChange={(e) => setEditEntryTitle(e.target.value)}
-                        className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413] font-serif text-base"
-                        required
-                      />
-                    </div>
-
-                    {/* Medium Selection (Extensible) */}
-                    <div className="p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
-                      <label className="block text-[#141413] text-[11px] font-semibold uppercase flex items-center justify-between">
-                        <span>Creative Medium Classification</span>
-                        <span className="text-[#8C8C82] text-[10px] font-normal">Controls Laboratory Medium Filter</span>
-                      </label>
-                      <select
-                        value={editEntryMedium}
-                        onChange={(e) => setEditEntryMedium(e.target.value)}
-                        className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
-                      >
-                        <option value="__none__">(No Medium Assigned / Unclassified)</option>
-                        {existingMediums.map((med) => (
-                          <option key={med} value={med}>
-                            {med}
-                          </option>
-                        ))}
-                        <option value="__custom__">+ Custom / New Medium...</option>
-                      </select>
-
-                      {editEntryMedium === '__custom__' && (
-                        <div className="pt-2">
-                          <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                            Custom Medium Name
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Architectural Casting, Sound Recording..."
-                            value={editCustomEntryMedium}
-                            onChange={(e) => setEditCustomEntryMedium(e.target.value)}
-                            className="w-full p-2 bg-[#FBFBFA] border border-[#141413] text-[#141413]"
-                            autoFocus
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Revision */}
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                          RUI Revision *
-                        </label>
-                        <select
-                          value={editEntryRevision}
-                          onChange={(e) => setEditEntryRevision(e.target.value as RuiRevision)}
-                          className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
-                        >
-                          <option value="REV 00">REV 00 (Initial State)</option>
-                          <option value="REV 01">REV 01 (Major Maturation)</option>
-                          <option value="REV 02">REV 02 (Expanded Fieldwork)</option>
-                          <option value="REV 03">REV 03 (Resolved Thesis)</option>
-                        </select>
-                      </div>
-
-                      {/* Visibility */}
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                          Visibility Status
-                        </label>
-                        <select
-                          value={editEntryVisibility}
-                          onChange={(e) => setEditEntryVisibility(e.target.value as 'published' | 'draft')}
-                          className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
-                        >
-                          <option value="published">Published (Public)</option>
-                          <option value="draft">Draft (Restricted)</option>
-                        </select>
-                      </div>
-
-                      {/* Collection */}
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                          Collection *
-                        </label>
-                        <select
-                          value={editEntryCollectionId}
-                          onChange={(e) => setEditEntryCollectionId(e.target.value)}
-                          className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
-                        >
-                          {collections.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.title}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Study */}
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                          Study *
-                        </label>
-                        <select
-                          value={editEntryStudyId}
-                          onChange={(e) => setEditEntryStudyId(e.target.value)}
-                          className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
-                        >
-                          {studies
-                            .filter((s) => s.collectionId === editEntryCollectionId)
-                            .map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.title}
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Location */}
-                    <div>
-                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                        Location / Coordinates
-                      </label>
-                      <input
-                        type="text"
-                        value={editEntryLocation}
-                        onChange={(e) => setEditEntryLocation(e.target.value)}
-                        className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
-                      />
-                    </div>
-
-                    {/* Summary */}
-                    <div>
-                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                        Summary / Thesis Note
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={editEntrySummary}
-                        onChange={(e) => setEditEntrySummary(e.target.value)}
-                        className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413] font-serif text-sm"
-                      />
-                    </div>
-
-                    {/* Thread checkboxes */}
-                    <div>
-                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1.5">
-                        Associated Threads
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {threads.map((t) => {
-                          const isChecked = editEntryThreadIds.includes(t.id);
-                          return (
-                            <button
-                              type="button"
-                              key={t.id}
-                              onClick={() => {
-                                if (isChecked) {
-                                  setEditEntryThreadIds(editEntryThreadIds.filter((id) => id !== t.id));
-                                } else {
-                                  setEditEntryThreadIds([...editEntryThreadIds, t.id]);
-                                }
-                              }}
-                              className={`px-2 py-0.5 border text-[11px] transition-colors ${
-                                isChecked
-                                  ? 'bg-[#141413] text-[#FBFBFA] border-[#141413]'
-                                  : 'bg-[#F4F3EE] text-[#4A4A44] border-[#E5E3DB]'
-                              }`}
-                            >
-                              #{t.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="pt-4 border-t border-[#E5E3DB] flex items-center justify-end space-x-3">
-                      <button
-                        type="button"
-                        onClick={() => setEditingEntry(null)}
-                        className="px-4 py-2 border border-[#E5E3DB] text-[#6E6E66] hover:text-[#141413] hover:border-[#141413] transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isSavingEntry}
-                        className="px-5 py-2 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] transition-colors font-medium flex items-center space-x-1.5"
-                      >
-                        {isSavingEntry ? <span>Saving...</span> : <span>Save Entry Changes</span>}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {/* Tab 2: Author New Entry Form */}
+        {/* Tab 2: Author / Edit Entry (Unified CMS) */}
         {activeTab === 'new-entry' && (
-          <form onSubmit={handlePublishEntry} className="space-y-8 bg-[#F4F3EE] p-6 sm:p-8 border border-[#E5E3DB]">
-            <div className="border-b border-[#E5E3DB] pb-4">
-              <h2 className="font-serif text-2xl text-[#141413] font-medium">
-                Author Laboratory Entry
-              </h2>
-              <p className="font-serif text-xs text-[#6E6E66] italic mt-1">
-                Rigid metadata scaffolding + flexible notebook content blocks.
-              </p>
-            </div>
-
-            {/* Rigid Metadata Scaffold Form */}
-            <div className="p-4 bg-[#FBFBFA] border border-[#E5E3DB] space-y-4">
-              <span className="text-xs font-mono-archival text-[#9E2A2B] uppercase tracking-wider block font-semibold">
-                Rigid Metadata Header
-              </span>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs font-mono-archival">
-                {/* Title */}
-                <div className="sm:col-span-2">
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                    Entry Title *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Istrian Stone Mooring Bollards Survey"
-                    value={entryTitle}
-                    onChange={(e) => setEntryTitle(e.target.value)}
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413] font-serif text-base focus:outline-hidden focus:border-[#141413]"
-                  />
-                </div>
-
-                {/* Medium Selection (Extensible) */}
-                <div className="sm:col-span-1">
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                    Creative Medium *
-                  </label>
-                  <select
-                    value={entryMedium}
-                    onChange={(e) => setEntryMedium(e.target.value)}
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
-                  >
-                    {existingMediums.map((med) => (
-                      <option key={med} value={med}>
-                        {med}
-                      </option>
-                    ))}
-                    <option value="__custom__">+ Custom / New Medium...</option>
-                    <option value="__none__">(No Medium Assigned)</option>
-                  </select>
-
-                  {entryMedium === '__custom__' && (
-                    <input
-                      type="text"
-                      placeholder="Type custom medium name..."
-                      value={customEntryMedium}
-                      onChange={(e) => setCustomEntryMedium(e.target.value)}
-                      className="w-full p-2 mt-2 bg-[#FBFBFA] border border-[#141413] text-[#141413]"
-                      autoFocus
-                    />
-                  )}
-                </div>
-
-                {/* Revision */}
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                    RUI Revision *
-                  </label>
-                  <select
-                    value={entryRevision}
-                    onChange={(e) => setEntryRevision(e.target.value as RuiRevision)}
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
-                  >
-                    <option value="REV 00">REV 00 (Initial State)</option>
-                    <option value="REV 01">REV 01 (Major Maturation)</option>
-                    <option value="REV 02">REV 02 (Expanded Fieldwork)</option>
-                    <option value="REV 03">REV 03 (Resolved Thesis)</option>
-                  </select>
-                </div>
-
-                {/* Collection */}
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                    Collection *
-                  </label>
-                  <select
-                    value={entryCollectionId}
-                    onChange={(e) => setEntryCollectionId(e.target.value)}
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
-                  >
-                    {collections.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Study */}
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                    Study (Belongs to Collection) *
-                  </label>
-                  <select
-                    value={entryStudyId}
-                    onChange={(e) => setEntryStudyId(e.target.value)}
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
-                  >
-                    {availableStudies.length > 0 ? (
-                      availableStudies.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.title}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">(No studies in collection)</option>
-                    )}
-                  </select>
-                </div>
-
-                {/* Location */}
-                <div>
-                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                    Location / Coordinate
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Venice (Dorsoduro)"
-                    value={entryLocation}
-                    onChange={(e) => setEntryLocation(e.target.value)}
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
-                  />
-                </div>
-              </div>
-
-              {/* Threads Multi-Select */}
-              <div className="pt-3 border-t border-[#EFEFEA]">
-                <label className="block text-[#8C8C82] text-[10px] uppercase font-mono-archival mb-1.5">
-                  Assign Conceptual Threads
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {threads.map((t) => {
-                    const isChecked = entryThreadIds.includes(t.id);
-                    return (
-                      <label
-                        key={t.id}
-                        className={`text-xs font-mono-archival px-2 py-1 border cursor-pointer select-none transition-colors ${
-                          isChecked
-                            ? 'bg-[#9E2A2B] text-[#FBFBFA] border-[#9E2A2B]'
-                            : 'bg-[#FBFBFA] text-[#4A4A44] border-[#E5E3DB]'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={isChecked}
-                          onChange={() => {
-                            if (isChecked) {
-                              setEntryThreadIds(entryThreadIds.filter((id) => id !== t.id));
-                            } else {
-                              setEntryThreadIds([...entryThreadIds, t.id]);
-                            }
-                          }}
-                        />
-                        #{t.name}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div>
-                <label className="block text-[#8C8C82] text-[10px] uppercase font-mono-archival mb-1">
-                  Brief Summary / Thesis Teaser
-                </label>
-                <input
-                  type="text"
-                  placeholder="One sentence description of the entry observation."
-                  value={entrySummary}
-                  onChange={(e) => setEntrySummary(e.target.value)}
-                  className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413] font-serif text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Flexible Notebook Content Blocks */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono-archival text-[#141413] uppercase tracking-wider font-semibold">
-                  Flexible Notebook Content Blocks ({entryBlocks.length})
-                </span>
-                <div className="flex flex-wrap gap-1 text-xs font-mono-archival">
-                  <button
-                    type="button"
-                    onClick={() => addBlock('paragraph')}
-                    className="px-2 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413]"
-                  >
-                    + Paragraph
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addBlock('image')}
-                    className="px-2 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413]"
-                  >
-                    + Image Scan
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addBlock('fragment')}
-                    className="px-2 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413]"
-                  >
-                    + Fragment
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addBlock('observation')}
-                    className="px-2 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413]"
-                  >
-                    + Observation
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addBlock('reference')}
-                    className="px-2 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413]"
-                  >
-                    + Reference
-                  </button>
-                </div>
-              </div>
-
-              {/* Rendered Block Editors */}
-              <div className="space-y-4">
-                {entryBlocks.map((block, idx) => (
-                  <div key={idx} className="p-4 bg-[#FBFBFA] border border-[#E5E3DB] space-y-3 relative group">
-                    <div className="flex items-center justify-between text-xs font-mono-archival text-[#8C8C82]">
-                      <span className="font-semibold text-[#141413]">
-                        BLOCK {idx + 1}: {block.type.toUpperCase()}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeBlock(idx)}
-                        className="text-red-700 hover:underline text-[11px]"
-                      >
-                        Remove Block
-                      </button>
-                    </div>
-
-                    {block.type === 'paragraph' && (
-                      <textarea
-                        rows={3}
-                        value={block.content}
-                        onChange={(e) => updateBlock(idx, { type: 'paragraph', content: e.target.value })}
-                        placeholder="Write paragraph text..."
-                        className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-base text-[#141413]"
-                      />
-                    )}
-
-                    {block.type === 'fragment' && (
-                      <div className="space-y-2">
-                        <textarea
-                          rows={2}
-                          value={block.note}
-                          onChange={(e) => updateBlock(idx, { ...block, note: e.target.value })}
-                          placeholder="Fragment note or pullquote..."
-                          className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-base italic text-[#141413]"
-                        />
-                        <input
-                          type="text"
-                          value={block.source || ''}
-                          onChange={(e) => updateBlock(idx, { ...block, source: e.target.value })}
-                          placeholder="Source / Notebook reference"
-                          className="w-full p-1.5 bg-[#FBFBFA] border border-[#E5E3DB] text-xs font-mono-archival text-[#6E6E66]"
-                        />
-                      </div>
-                    )}
-
-                    {block.type === 'image' && (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={block.url}
-                          onChange={(e) => updateBlock(idx, { ...block, url: e.target.value })}
-                          placeholder="Image URL"
-                          className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-xs font-mono-archival"
-                        />
-                        <input
-                          type="text"
-                          value={block.caption || ''}
-                          onChange={(e) => updateBlock(idx, { ...block, caption: e.target.value })}
-                          placeholder="Image Caption"
-                          className="w-full p-1.5 bg-[#FBFBFA] border border-[#E5E3DB] text-xs font-mono-archival"
-                        />
-                      </div>
-                    )}
-
-                    {block.type === 'observation' && (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={block.text}
-                          onChange={(e) => updateBlock(idx, { ...block, text: e.target.value })}
-                          placeholder="Field observation text..."
-                          className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-base"
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="text"
-                            value={block.date || ''}
-                            onChange={(e) => updateBlock(idx, { ...block, date: e.target.value })}
-                            placeholder="Observation Date"
-                            className="p-1.5 bg-[#FBFBFA] border border-[#E5E3DB] text-xs font-mono-archival"
-                          />
-                          <input
-                            type="text"
-                            value={block.coordinates || ''}
-                            onChange={(e) => updateBlock(idx, { ...block, coordinates: e.target.value })}
-                            placeholder="Coordinates (e.g. 37.77° N)"
-                            className="p-1.5 bg-[#FBFBFA] border border-[#E5E3DB] text-xs font-mono-archival"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {block.type === 'reference' && (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={block.citation}
-                          onChange={(e) => updateBlock(idx, { ...block, citation: e.target.value })}
-                          placeholder="Bibliographic citation (e.g. Author, Title, Year)"
-                          className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-sm"
-                        />
-                        <input
-                          type="text"
-                          value={block.link || ''}
-                          onChange={(e) => updateBlock(idx, { ...block, link: e.target.value })}
-                          placeholder="External URL link (optional)"
-                          className="w-full p-1.5 bg-[#FBFBFA] border border-[#E5E3DB] text-xs font-mono-archival"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Publishing Controls */}
-            <div className="pt-6 border-t border-[#E5E3DB] flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center space-x-3 text-xs font-mono-archival">
-                <label className="flex items-center space-x-1.5">
-                  <input
-                    type="radio"
-                    name="visibility"
-                    checked={entryVisibility === 'published'}
-                    onChange={() => setEntryVisibility('published')}
-                  />
-                  <span>Published</span>
-                </label>
-                <label className="flex items-center space-x-1.5">
-                  <input
-                    type="radio"
-                    name="visibility"
-                    checked={entryVisibility === 'draft'}
-                    onChange={() => setEntryVisibility('draft')}
-                  />
-                  <span>Draft</span>
-                </label>
-              </div>
-
-              <div className="flex items-center space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('entries')}
-                  className="px-4 py-2 bg-[#FBFBFA] border border-[#E5E3DB] text-xs font-mono-archival text-[#6E6E66] hover:text-[#141413]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-[#9E2A2B] text-[#FBFBFA] hover:bg-[#801C1D] text-xs font-mono-archival tracking-wider uppercase font-semibold transition-colors"
-                >
-                  Publish to Archive
-                </button>
-              </div>
-            </div>
-          </form>
+          <EntryEditor
+            key={editingEntry ? editingEntry.id : 'new-entry'}
+            initialEntry={editingEntry}
+            entries={entries}
+            collections={collections}
+            studies={studies}
+            threads={threads}
+            onSave={async (entryData, existingId) => {
+              if (existingId) {
+                await updateEntry(existingId, entryData);
+                setSuccessMessage(`Entry "${entryData.title}" updated successfully!`);
+              } else {
+                await addEntry(entryData);
+                setSuccessMessage(`Entry "${entryData.title}" published successfully!`);
+              }
+              setTimeout(() => setSuccessMessage(null), 4000);
+              setEditingEntry(null);
+              setActiveTab('entries');
+            }}
+            onCancel={() => {
+              setEditingEntry(null);
+              setActiveTab('entries');
+            }}
+          />
         )}
 
         {/* Tab 3: Curated Works Management */}

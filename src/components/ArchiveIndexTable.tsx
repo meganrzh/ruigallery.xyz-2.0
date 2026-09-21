@@ -39,7 +39,7 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
           const matchLocation = entry.location?.toLowerCase().includes(query);
           const matchSummary = entry.summary?.toLowerCase().includes(query);
           const matchNum = entry.entryNumber.includes(query);
-          const matchRev = entry.ruiRevision.toLowerCase().includes(query);
+          const matchRev = entry.ruiRevision ? entry.ruiRevision.toLowerCase().includes(query) : false;
           const matchMedium = entry.medium?.toLowerCase().includes(query);
           return matchTitle || matchLocation || matchSummary || matchNum || matchRev || matchMedium;
         }
@@ -271,14 +271,18 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
 
                       {/* Entry # */}
                       <td className="py-3.5 px-3 text-[#141413] whitespace-nowrap">
-                        0{entry.entryNumber}
+                        {entry.entryNumber.startsWith('0') ? entry.entryNumber : `0${entry.entryNumber}`}
                       </td>
 
                       {/* Revision */}
                       <td className="py-3.5 px-2 whitespace-nowrap">
-                        <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] text-[10px]">
-                          {entry.ruiRevision}
-                        </span>
+                        {entry.ruiRevision ? (
+                          <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] text-[10px]">
+                            {entry.ruiRevision}
+                          </span>
+                        ) : (
+                          <span className="text-[#8C8C82] text-[10px]">—</span>
+                        )}
                       </td>
 
                       {/* Title */}

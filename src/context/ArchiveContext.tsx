@@ -41,6 +41,7 @@ interface ArchiveContextType {
   getEntriesByCollection: (collectionId: string) => Entry[];
   getEntriesByThread: (threadId: string) => Entry[];
   getRelatedStudiesForEntry: (entry: Entry) => Study[];
+  getRelatedEntriesForEntry: (entry: Entry) => Entry[];
   getRelatedEntriesForWork: (work: CuratedWork) => Entry[];
   getRelatedStudiesForWork: (work: CuratedWork) => Study[];
   getNextPrevEntry: (currentId: string) => { prev?: Entry; next?: Entry };
@@ -196,7 +197,34 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const getCuratedWork = (idOrSlug: string) => {
-    return curatedWorks.find((w) => w.id === idOrSlug || w.slug === idOrSlug);
+    const fromCurated = curatedWorks.find((w) => w.id === idOrSlug || w.slug === idOrSlug);
+    if (fromCurated) return fromCurated;
+    const entry = entries.find((e) => e.id === idOrSlug || e.slug === idOrSlug);
+    if (entry) {
+      return {
+        id: entry.id,
+        slug: entry.slug,
+        title: entry.title,
+        subtitle: entry.subtitle,
+        workType: (entry.medium as any) || 'Essay',
+        year: entry.createdDate ? entry.createdDate.slice(0, 4) : '2026',
+        date: entry.displayDate || entry.createdDate,
+        archivalDate: entry.createdDate,
+        featuredOnHome: Boolean(entry.featuredOnHome),
+        homeLayoutWeight: entry.homeLayoutWeight || 'standard',
+        coverImage: entry.coverImage || '',
+        coverImageCaption: entry.coverImageCaption,
+        coverImageAlt: entry.coverImageAlt,
+        excerpt: entry.excerpt || entry.summary || '',
+        bodyBlocks: entry.blocks as any,
+        metadata: entry.metadata,
+        relatedStudyIds: entry.relatedStudyIds || (entry.studyId ? [entry.studyId] : []),
+        relatedEntryIds: entry.relatedEntryIds || [],
+        visibility: entry.visibility,
+        order: entry.order || 0,
+      } as CuratedWork;
+    }
+    return undefined;
   };
 
   const getThread = (idOrSlug: string) => {
@@ -232,6 +260,11 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return studies.filter((s) => entry.relatedStudyIds?.includes(s.id));
   };
 
+  const getRelatedEntriesForEntry = (entry: Entry) => {
+    if (!entry.relatedEntryIds || entry.relatedEntryIds.length === 0) return [];
+    return entries.filter((e) => entry.relatedEntryIds?.includes(e.id));
+  };
+
   const getRelatedEntriesForWork = (work: CuratedWork) => {
     if (!work.relatedEntryIds || work.relatedEntryIds.length === 0) return [];
     return entries.filter((e) => work.relatedEntryIds?.includes(e.id));
@@ -256,7 +289,47 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const getNextPrevWork = (currentId: string) => {
-    const published = sortCuratedWorks(curatedWorks.filter((w) => w.visibility === 'published'));
+    const allWorks: CuratedWork[] = [];
+    const seenIds = new Set<string>();
+
+    entries
+      .filter((e) => e.visibility === 'published' && Boolean(e.featuredOnHome))
+      .forEach((entry) => {
+        seenIds.add(entry.id);
+        allWorks.push({
+          id: entry.id,
+          slug: entry.slug,
+          title: entry.title,
+          subtitle: entry.subtitle,
+          workType: (entry.medium as any) || 'Essay',
+          year: entry.createdDate ? entry.createdDate.slice(0, 4) : '2026',
+          date: entry.displayDate || entry.createdDate,
+          archivalDate: entry.createdDate,
+          featuredOnHome: true,
+          homeLayoutWeight: entry.homeLayoutWeight || 'standard',
+          coverImage: entry.coverImage || '',
+          coverImageCaption: entry.coverImageCaption,
+          coverImageAlt: entry.coverImageAlt,
+          excerpt: entry.excerpt || entry.summary || '',
+          bodyBlocks: entry.blocks as any,
+          metadata: entry.metadata,
+          relatedStudyIds: entry.relatedStudyIds || (entry.studyId ? [entry.studyId] : []),
+          relatedEntryIds: entry.relatedEntryIds || [],
+          visibility: entry.visibility,
+          order: entry.order || 0,
+        });
+      });
+
+    curatedWorks
+      .filter((w) => w.visibility === 'published')
+      .forEach((w) => {
+        if (!seenIds.has(w.id)) {
+          seenIds.add(w.id);
+          allWorks.push(w);
+        }
+      });
+
+    const published = sortCuratedWorks(allWorks);
     const index = published.findIndex((w) => w.id === currentId || w.slug === currentId);
     if (index === -1) return {};
     return {
@@ -520,6 +593,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         getEntriesByCollection,
         getEntriesByThread,
         getRelatedStudiesForEntry,
+        getRelatedEntriesForEntry,
         getRelatedEntriesForWork,
         getRelatedStudiesForWork,
         getNextPrevEntry,

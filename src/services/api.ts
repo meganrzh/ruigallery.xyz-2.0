@@ -50,19 +50,29 @@ export interface RawHydratedEntry {
   id: string;
   slug: string;
   entryNumber: string;
-  studyId: string;
-  collectionId: string;
+  studyId?: string | null;
+  collectionId?: string | null;
   title: string;
-  ruiRevision: string;
+  subtitle?: string | null;
+  ruiRevision?: string | null;
   medium?: string | null;
-  summary?: string;
-  location?: string;
+  summary?: string | null;
+  excerpt?: string | null;
+  location?: string | null;
   createdDate: string;
-  publishedDate?: string;
-  lastModifiedDate?: string;
+  displayDate?: string | null;
+  publishedDate?: string | null;
+  lastModifiedDate?: string | null;
+  featuredOnHome?: boolean | number;
+  homeLayoutWeight?: string | null;
+  coverImage?: string | null;
+  coverImageCaption?: string | null;
+  coverImageAlt?: string | null;
   blocks: EntryBlock[];
+  metadata?: Record<string, string> | null;
   threadIds: string[];
   relatedStudyIds: string[];
+  relatedEntryIds?: string[];
   visibility: 'published' | 'draft' | 'hidden';
   order?: number;
 }
@@ -111,20 +121,31 @@ export function mapRawToEntry(raw: RawHydratedEntry): Entry {
     id: raw.id,
     slug: raw.slug,
     entryNumber: raw.entryNumber,
-    collectionId: raw.collectionId,
-    studyId: raw.studyId,
+    collectionId: raw.collectionId || undefined,
+    studyId: raw.studyId || undefined,
     title: raw.title,
-    ruiRevision: (raw.ruiRevision || 'REV 00') as RuiRevision,
+    subtitle: raw.subtitle || undefined,
+    ruiRevision: raw.ruiRevision !== undefined ? raw.ruiRevision : null,
     medium: raw.medium || undefined,
     createdDate: raw.createdDate,
+    displayDate: raw.displayDate || undefined,
     lastModifiedDate: raw.lastModifiedDate || undefined,
     publishedDate: raw.publishedDate || undefined,
     location: raw.location || undefined,
+    featuredOnHome: Boolean(raw.featuredOnHome),
+    homeLayoutWeight: (raw.homeLayoutWeight as any) || 'standard',
+    coverImage: raw.coverImage || undefined,
+    coverImageCaption: raw.coverImageCaption || undefined,
+    coverImageAlt: raw.coverImageAlt || undefined,
     threadIds: raw.threadIds || [],
     relatedStudyIds: raw.relatedStudyIds || [],
+    relatedEntryIds: raw.relatedEntryIds || [],
     summary: raw.summary || undefined,
+    excerpt: raw.excerpt || undefined,
     blocks: raw.blocks || [],
+    metadata: raw.metadata || {},
     visibility: raw.visibility || 'published',
+    order: raw.order,
   };
 }
 

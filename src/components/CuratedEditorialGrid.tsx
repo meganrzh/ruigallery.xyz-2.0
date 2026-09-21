@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ArrowUpRight, BookOpen, Compass, ExternalLink } from 'lucide-react';
 import { CuratedWork, AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
@@ -8,9 +8,52 @@ interface CuratedEditorialGridProps {
 }
 
 export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNavigate }) => {
-  const { curatedWorks, getRelatedStudiesForWork, getRelatedEntriesForWork } = useArchive();
+  const { curatedWorks, entries, getRelatedStudiesForWork, getRelatedEntriesForWork } = useArchive();
 
-  const publishedWorks = curatedWorks.filter((w) => w.visibility === 'published' && w.featuredOnHome);
+  // Unified items: Source from entries marked featuredOnHome, merging any legacy curatedWorks
+  const publishedWorks = useMemo(() => {
+    const list: CuratedWork[] = [];
+    const seenIds = new Set<string>();
+
+    entries
+      .filter((e) => e.visibility === 'published' && Boolean(e.featuredOnHome))
+      .forEach((entry) => {
+        seenIds.add(entry.id);
+        list.push({
+          id: entry.id,
+          slug: entry.slug,
+          title: entry.title,
+          subtitle: entry.subtitle,
+          workType: (entry.medium as any) || 'Essay',
+          year: entry.createdDate ? entry.createdDate.slice(0, 4) : '2026',
+          date: entry.displayDate || entry.createdDate,
+          archivalDate: entry.createdDate,
+          featuredOnHome: true,
+          homeLayoutWeight: entry.homeLayoutWeight || 'standard',
+          coverImage: entry.coverImage || '',
+          coverImageCaption: entry.coverImageCaption,
+          coverImageAlt: entry.coverImageAlt,
+          excerpt: entry.excerpt || entry.summary || '',
+          bodyBlocks: entry.blocks as any,
+          metadata: entry.metadata,
+          relatedStudyIds: entry.relatedStudyIds || (entry.studyId ? [entry.studyId] : []),
+          relatedEntryIds: entry.relatedEntryIds || [],
+          visibility: entry.visibility,
+          order: entry.order || 0,
+        });
+      });
+
+    curatedWorks
+      .filter((w) => w.visibility === 'published' && w.featuredOnHome)
+      .forEach((w) => {
+        if (!seenIds.has(w.id)) {
+          seenIds.add(w.id);
+          list.push(w);
+        }
+      });
+
+    return list;
+  }, [entries, curatedWorks]);
 
   if (publishedWorks.length === 0) {
     return null;

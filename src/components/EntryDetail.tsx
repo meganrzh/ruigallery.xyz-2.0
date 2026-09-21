@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, ArrowRight, Compass, Calendar, MapPin, Tag } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Compass, Calendar, MapPin, Tag, Layers, FileText } from 'lucide-react';
 import { AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { EntryMetadataHeader } from './EntryMetadataHeader';
@@ -17,6 +17,7 @@ export const EntryDetail: React.FC<EntryDetailProps> = ({ slug, onNavigate }) =>
     getStudy,
     getThread,
     getRelatedStudiesForEntry,
+    getRelatedEntriesForEntry,
     getNextPrevEntry,
   } = useArchive();
 
@@ -40,6 +41,7 @@ export const EntryDetail: React.FC<EntryDetailProps> = ({ slug, onNavigate }) =>
   const study = getStudy(entry.studyId);
   const threads = entry.threadIds.map((tId) => getThread(tId)).filter(Boolean) as any[];
   const relatedStudies = getRelatedStudiesForEntry(entry);
+  const relatedEntries = getRelatedEntriesForEntry(entry);
   const { prev, next } = getNextPrevEntry(entry.id);
 
   return (
@@ -92,12 +94,33 @@ export const EntryDetail: React.FC<EntryDetailProps> = ({ slug, onNavigate }) =>
           <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl text-[#141413] font-medium leading-[1.15]">
             {entry.title}
           </h1>
+          {entry.subtitle && (
+            <p className="font-serif text-lg text-[#6E6E66] italic">
+              {entry.subtitle}
+            </p>
+          )}
           {entry.summary && (
             <p className="font-serif text-base sm:text-lg text-[#5C5C54] italic leading-relaxed">
               {entry.summary}
             </p>
           )}
         </header>
+
+        {/* Optional Cover Image */}
+        {entry.coverImage && (
+          <figure className="my-6">
+            <img
+              src={entry.coverImage}
+              alt={entry.coverImageAlt || entry.title}
+              className="w-full max-h-[560px] object-cover border border-[#E5E3DB] bg-[#F4F3EE]"
+            />
+            {entry.coverImageCaption && (
+              <figcaption className="text-xs font-mono-archival text-[#8C8C82] mt-2 italic">
+                {entry.coverImageCaption}
+              </figcaption>
+            )}
+          </figure>
+        )}
 
         {/* Flexible Notebook Content Body */}
         <EntryBodyRenderer blocks={entry.blocks} />
@@ -121,6 +144,33 @@ export const EntryDetail: React.FC<EntryDetailProps> = ({ slug, onNavigate }) =>
                   </span>
                   <h4 className="font-serif text-sm text-[#141413] font-medium hover:text-[#9E2A2B]">
                     {s.title} &rarr;
+                  </h4>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Related Entries Cross-References */}
+        {relatedEntries.length > 0 && (
+          <section className="mt-6 pt-6 border-t border-[#E5E3DB] bg-[#FBFBFA] p-5 space-y-3">
+            <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#141413] uppercase tracking-wider font-semibold">
+              <FileText className="w-3.5 h-3.5 text-[#9E2A2B]" />
+              <span>Related Archival Entries</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {relatedEntries.map((rel) => (
+                <div
+                  key={rel.id}
+                  onClick={() => onNavigate({ page: 'entry', slug: rel.slug })}
+                  className="p-3 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] cursor-pointer transition-colors space-y-1"
+                >
+                  <div className="flex items-center justify-between text-[10px] font-mono-archival text-[#8C8C82]">
+                    <span>ENTRY {rel.entryNumber}</span>
+                    {rel.medium && <span className="text-[#9E2A2B]">{rel.medium}</span>}
+                  </div>
+                  <h4 className="font-serif text-sm text-[#141413] font-medium hover:text-[#9E2A2B] truncate">
+                    {rel.title} &rarr;
                   </h4>
                 </div>
               ))}

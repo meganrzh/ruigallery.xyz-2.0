@@ -76,16 +76,25 @@ export interface EntryRecord {
   id: string;
   slug: string;
   entry_number: string;
-  study_id: string;
+  study_id: string | null;
   title: string;
-  rui_revision: string;
+  subtitle: string | null;
+  rui_revision: string | null;
   medium: string | null;
   summary: string | null;
+  excerpt: string | null;
   location: string | null;
   archival_date: string;
+  display_date: string | null;
   published_date: string | null;
   last_modified_date: string | null;
+  featured_on_home: number;
+  home_layout_weight: string | null;
+  cover_image: string | null;
+  cover_image_caption: string | null;
+  cover_image_alt: string | null;
   blocks: string;
+  metadata: string | null;
   visibility: string;
   order_index: number;
   created_at: string;
@@ -100,6 +109,11 @@ export interface EntryThreadRecord {
 export interface EntryRelatedStudyRecord {
   entry_id: string;
   study_id: string;
+}
+
+export interface EntryRelatedEntryRecord {
+  entry_id: string;
+  related_entry_id: string;
 }
 
 export interface CuratedWorkRecord {
@@ -167,7 +181,8 @@ function hydrateEntry(
   entry: EntryRecord,
   studyCollectionMap: Map<string, string>,
   entryThreadsMap: Map<string, string[]>,
-  entryRelatedStudiesMap: Map<string, string[]>
+  entryRelatedStudiesMap: Map<string, string[]>,
+  entryRelatedEntriesMap?: Map<string, string[]>
 ) {
   let blocks: unknown[] = [];
   try {
@@ -176,23 +191,40 @@ function hydrateEntry(
     blocks = [];
   }
 
+  let metadata: Record<string, string> = {};
+  try {
+    metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : (entry.metadata || {});
+  } catch {
+    metadata = {};
+  }
+
   return {
     id: entry.id,
     slug: entry.slug,
     entryNumber: entry.entry_number,
-    studyId: entry.study_id,
-    collectionId: studyCollectionMap.get(entry.study_id) || '',
+    studyId: entry.study_id || undefined,
+    collectionId: entry.study_id ? (studyCollectionMap.get(entry.study_id) || '') : undefined,
     title: entry.title,
-    ruiRevision: entry.rui_revision,
+    subtitle: entry.subtitle || undefined,
+    ruiRevision: entry.rui_revision !== undefined ? entry.rui_revision : null,
     medium: entry.medium || undefined,
     summary: entry.summary || '',
+    excerpt: entry.excerpt || undefined,
     location: entry.location || '',
     createdDate: entry.archival_date,
+    displayDate: entry.display_date || undefined,
     publishedDate: entry.published_date || entry.archival_date,
     lastModifiedDate: entry.last_modified_date || entry.archival_date,
+    featuredOnHome: Boolean(entry.featured_on_home),
+    homeLayoutWeight: entry.home_layout_weight || 'standard',
+    coverImage: entry.cover_image || undefined,
+    coverImageCaption: entry.cover_image_caption || undefined,
+    coverImageAlt: entry.cover_image_alt || undefined,
     blocks,
+    metadata,
     threadIds: entryThreadsMap.get(entry.id) || [],
     relatedStudyIds: entryRelatedStudiesMap.get(entry.id) || [],
+    relatedEntryIds: entryRelatedEntriesMap?.get(entry.id) || [],
     visibility: (entry.visibility || 'published') as 'published' | 'draft' | 'hidden',
     order: entry.order_index,
     createdAt: entry.created_at,
@@ -288,6 +320,7 @@ export default {
           entriesResult,
           entryThreadsResult,
           entryRelatedStudiesResult,
+          entryRelatedEntriesResult,
           worksResult,
           workStudiesResult,
           workEntriesResult,
@@ -298,6 +331,7 @@ export default {
           env.DB.prepare('SELECT * FROM entries ORDER BY order_index ASC, archival_date DESC').all<EntryRecord>(),
           env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
           env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
+          env.DB.prepare('SELECT entry_id, related_entry_id FROM entry_related_entries').all<EntryRelatedEntryRecord>(),
           env.DB.prepare('SELECT * FROM curated_works ORDER BY archival_date DESC, created_at DESC').all<CuratedWorkRecord>(),
           env.DB.prepare('SELECT work_id, study_id FROM curated_work_related_studies').all<CuratedWorkRelatedStudyRecord>(),
           env.DB.prepare('SELECT work_id, entry_id FROM curated_work_related_entries').all<CuratedWorkRelatedEntryRecord>(),
@@ -322,8 +356,15 @@ export default {
           entryRelatedStudiesMap.set(ers.entry_id, list);
         }
 
+        const entryRelatedEntriesMap = new Map<string, string[]>();
+        for (const ere of entryRelatedEntriesResult.results || []) {
+          const list = entryRelatedEntriesMap.get(ere.entry_id) || [];
+          list.push(ere.related_entry_id);
+          entryRelatedEntriesMap.set(ere.entry_id, list);
+        }
+
         const hydratedEntries = (entriesResult.results || []).map((e) =>
-          hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap)
+          hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap)
         );
 
         const hydratedThreads = (threadsResult.results || []).map((t) => ({
@@ -861,13 +902,15 @@ export default {
           const collectionFilter = url.searchParams.get('collectionId');
           const threadFilter = url.searchParams.get('threadId');
           const visibilityFilter = url.searchParams.get('visibility');
+          const featuredParam = url.searchParams.get('featured');
 
-          const [entriesResult, studiesResult, entryThreadsResult, entryRelatedStudiesResult] =
+          const [entriesResult, studiesResult, entryThreadsResult, entryRelatedStudiesResult, entryRelatedEntriesResult] =
             await Promise.all([
               env.DB.prepare('SELECT * FROM entries ORDER BY order_index ASC, archival_date DESC').all<EntryRecord>(),
               env.DB.prepare('SELECT id, collection_id FROM studies').all<{ id: string; collection_id: string }>(),
               env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
               env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
+              env.DB.prepare('SELECT entry_id, related_entry_id FROM entry_related_entries').all<EntryRelatedEntryRecord>(),
             ]);
 
           const studyCollectionMap = new Map<string, string>();
@@ -889,8 +932,15 @@ export default {
             entryRelatedStudiesMap.set(ers.entry_id, list);
           }
 
+          const entryRelatedEntriesMap = new Map<string, string[]>();
+          for (const ere of entryRelatedEntriesResult.results || []) {
+            const list = entryRelatedEntriesMap.get(ere.entry_id) || [];
+            list.push(ere.related_entry_id);
+            entryRelatedEntriesMap.set(ere.entry_id, list);
+          }
+
           let list = (entriesResult.results || []).map((e) =>
-            hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap)
+            hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap)
           );
 
           if (studyFilter) {
@@ -905,6 +955,10 @@ export default {
           if (visibilityFilter) {
             list = list.filter((e) => e.visibility === visibilityFilter);
           }
+          if (featuredParam !== null) {
+            const isFeatured = featuredParam === 'true' || featuredParam === '1';
+            list = list.filter((e) => Boolean(e.featuredOnHome) === isFeatured);
+          }
 
           return jsonResponse({
             success: true,
@@ -917,39 +971,48 @@ export default {
             id?: string;
             slug?: string;
             entryNumber?: string;
-            studyId?: string;
+            studyId?: string | null;
             title?: string;
-            ruiRevision?: string;
-            medium?: string;
-            summary?: string;
-            location?: string;
+            subtitle?: string | null;
+            ruiRevision?: string | null;
+            medium?: string | null;
+            summary?: string | null;
+            excerpt?: string | null;
+            location?: string | null;
             createdDate?: string;
-            publishedDate?: string;
-            lastModifiedDate?: string;
+            displayDate?: string | null;
+            publishedDate?: string | null;
+            lastModifiedDate?: string | null;
+            featuredOnHome?: boolean | number;
+            homeLayoutWeight?: string | null;
+            coverImage?: string | null;
+            coverImageCaption?: string | null;
+            coverImageAlt?: string | null;
             blocks?: unknown[];
+            metadata?: Record<string, string> | null;
             threadIds?: string[];
             relatedStudyIds?: string[];
+            relatedEntryIds?: string[];
             visibility?: string;
             order?: number;
           };
 
           const title = body.title?.trim();
-          const studyId = body.studyId?.trim();
-
           if (!title) {
             return errorResponse('Entry title is required', 400);
           }
-          if (!studyId) {
-            return errorResponse('Valid studyId is required', 400);
-          }
 
-          // Verify study exists and retrieve its collection_id
-          const study = await env.DB.prepare(
-            'SELECT id, collection_id FROM studies WHERE id = ?'
-          ).bind(studyId).first<{ id: string; collection_id: string }>();
+          const studyId = body.studyId?.trim() || null;
+          let studyCollectionId = '';
+          if (studyId) {
+            const study = await env.DB.prepare(
+              'SELECT id, collection_id FROM studies WHERE id = ?'
+            ).bind(studyId).first<{ id: string; collection_id: string }>();
 
-          if (!study) {
-            return errorResponse(`Referenced study '${studyId}' does not exist`, 400);
+            if (!study) {
+              return errorResponse(`Referenced study '${studyId}' does not exist`, 400);
+            }
+            studyCollectionId = study.collection_id;
           }
 
           const id = body.id || `entry-${Date.now()}`;
@@ -958,36 +1021,59 @@ export default {
             body.slug ||
             `entry-${entryNumber}-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}` ||
             id;
-          const ruiRevision = body.ruiRevision || 'REV 00';
+          const ruiRevision = body.ruiRevision !== undefined ? body.ruiRevision : 'REV 00';
           const medium = body.medium?.trim() || null;
+          const subtitle = body.subtitle?.trim() || null;
           const summary = body.summary || '';
+          const excerpt = body.excerpt || null;
           const location = body.location || '';
           const now = new Date().toISOString();
           const archivalDate = body.createdDate || now.slice(0, 10).replace(/-/g, '.');
+          const displayDate = body.displayDate || null;
           const publishedDate = body.publishedDate || archivalDate;
           const lastModifiedDate = body.lastModifiedDate || archivalDate;
+          const featuredOnHome = body.featuredOnHome ? 1 : 0;
+          const homeLayoutWeight = body.homeLayoutWeight || 'standard';
+          const coverImage = body.coverImage?.trim() || null;
+          const coverImageCaption = body.coverImageCaption?.trim() || null;
+          const coverImageAlt = body.coverImageAlt?.trim() || null;
           const blocksJson = JSON.stringify(body.blocks || []);
+          const metadataJson = JSON.stringify(body.metadata || {});
           const visibility = body.visibility || 'published';
           const order_index = typeof body.order === 'number' ? body.order : 0;
 
           const batchStatements: D1PreparedStatement[] = [
             env.DB.prepare(
-              `INSERT INTO entries (id, slug, entry_number, study_id, title, rui_revision, medium, summary, location, archival_date, published_date, last_modified_date, blocks, visibility, order_index, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              `INSERT INTO entries (
+                id, slug, entry_number, study_id, title, subtitle, rui_revision,
+                medium, summary, excerpt, location, archival_date, display_date,
+                published_date, last_modified_date, featured_on_home, home_layout_weight,
+                cover_image, cover_image_caption, cover_image_alt, blocks, metadata,
+                visibility, order_index, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).bind(
               id,
               slug,
               entryNumber,
               studyId,
               title,
+              subtitle,
               ruiRevision,
               medium,
               summary,
+              excerpt,
               location,
               archivalDate,
+              displayDate,
               publishedDate,
               lastModifiedDate,
+              featuredOnHome,
+              homeLayoutWeight,
+              coverImage,
+              coverImageCaption,
+              coverImageAlt,
               blocksJson,
+              metadataJson,
               visibility,
               order_index,
               now,
@@ -1019,11 +1105,27 @@ export default {
             }
           }
 
+          if (Array.isArray(body.relatedEntryIds)) {
+            for (const reId of body.relatedEntryIds) {
+              if (reId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO entry_related_entries (entry_id, related_entry_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(id, reId, now)
+                );
+              }
+            }
+          }
+
           await env.DB.batch(batchStatements);
 
-          const studyCollectionMap = new Map<string, string>([[study.id, study.collection_id]]);
+          const studyCollectionMap = new Map<string, string>();
+          if (studyId && studyCollectionId) {
+            studyCollectionMap.set(studyId, studyCollectionId);
+          }
           const entryThreadsMap = new Map<string, string[]>([[id, body.threadIds || []]]);
           const entryRelatedStudiesMap = new Map<string, string[]>([[id, body.relatedStudyIds || []]]);
+          const entryRelatedEntriesMap = new Map<string, string[]>([[id, body.relatedEntryIds || []]]);
 
           const createdEntry = await env.DB.prepare(
             'SELECT * FROM entries WHERE id = ?'
@@ -1036,7 +1138,7 @@ export default {
           return jsonResponse(
             {
               success: true,
-              data: hydrateEntry(createdEntry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap),
+              data: hydrateEntry(createdEntry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap),
             },
             201
           );
@@ -1057,31 +1159,40 @@ export default {
             return errorResponse('Entry not found', 404);
           }
 
-          const [study, entryThreads, entryRelatedStudies] = await Promise.all([
-            env.DB.prepare('SELECT collection_id FROM studies WHERE id = ?')
-              .bind(entry.study_id)
-              .first<{ collection_id: string }>(),
+          const [study, entryThreads, entryRelatedStudies, entryRelatedEntries] = await Promise.all([
+            entry.study_id
+              ? env.DB.prepare('SELECT collection_id FROM studies WHERE id = ?')
+                  .bind(entry.study_id)
+                  .first<{ collection_id: string }>()
+              : Promise.resolve(null),
             env.DB.prepare('SELECT thread_id FROM entry_threads WHERE entry_id = ?')
               .bind(entry.id)
               .all<{ thread_id: string }>(),
             env.DB.prepare('SELECT study_id FROM entry_related_studies WHERE entry_id = ?')
               .bind(entry.id)
               .all<{ study_id: string }>(),
+            env.DB.prepare('SELECT related_entry_id FROM entry_related_entries WHERE entry_id = ?')
+              .bind(entry.id)
+              .all<{ related_entry_id: string }>(),
           ]);
 
-          const studyCollectionMap = new Map<string, string>([
-            [entry.study_id, study?.collection_id || ''],
-          ]);
+          const studyCollectionMap = new Map<string, string>();
+          if (entry.study_id && study?.collection_id) {
+            studyCollectionMap.set(entry.study_id, study.collection_id);
+          }
           const entryThreadsMap = new Map<string, string[]>([
             [entry.id, (entryThreads.results || []).map((r) => r.thread_id)],
           ]);
           const entryRelatedStudiesMap = new Map<string, string[]>([
             [entry.id, (entryRelatedStudies.results || []).map((r) => r.study_id)],
           ]);
+          const entryRelatedEntriesMap = new Map<string, string[]>([
+            [entry.id, (entryRelatedEntries.results || []).map((r) => r.related_entry_id)],
+          ]);
 
           return jsonResponse({
             success: true,
-            data: hydrateEntry(entry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap),
+            data: hydrateEntry(entry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap),
           });
         }
 
@@ -1097,19 +1208,29 @@ export default {
           const entryId = existing.id;
           const body = (await request.json()) as {
             title?: string;
+            subtitle?: string | null;
             slug?: string;
             entryNumber?: string;
-            studyId?: string;
-            ruiRevision?: string;
+            studyId?: string | null;
+            ruiRevision?: string | null;
             medium?: string | null;
-            summary?: string;
-            location?: string;
+            summary?: string | null;
+            excerpt?: string | null;
+            location?: string | null;
             createdDate?: string;
-            publishedDate?: string;
-            lastModifiedDate?: string;
+            displayDate?: string | null;
+            publishedDate?: string | null;
+            lastModifiedDate?: string | null;
+            featuredOnHome?: boolean | number;
+            homeLayoutWeight?: string | null;
+            coverImage?: string | null;
+            coverImageCaption?: string | null;
+            coverImageAlt?: string | null;
             blocks?: unknown[];
+            metadata?: Record<string, string> | null;
             threadIds?: string[];
             relatedStudyIds?: string[];
+            relatedEntryIds?: string[];
             visibility?: string;
             order?: number;
           };
@@ -1127,43 +1248,74 @@ export default {
           const now = new Date().toISOString();
           const lastModified = body.lastModifiedDate || now.slice(0, 10).replace(/-/g, '.');
           const blocksJson = body.blocks !== undefined ? JSON.stringify(body.blocks) : null;
+          const metadataJson = body.metadata !== undefined ? JSON.stringify(body.metadata) : null;
           const updatedMedium =
             body.medium !== undefined
               ? (body.medium ? body.medium.trim() : null)
               : existing.medium;
+          const updatedStudyId =
+            body.studyId !== undefined
+              ? (body.studyId ? body.studyId.trim() : null)
+              : existing.study_id;
+          const updatedFeatured =
+            body.featuredOnHome !== undefined
+              ? (body.featuredOnHome ? 1 : 0)
+              : existing.featured_on_home;
+          const updatedRuiRevision =
+            body.ruiRevision !== undefined
+              ? (body.ruiRevision ? body.ruiRevision : null)
+              : existing.rui_revision;
 
           const batchStatements: D1PreparedStatement[] = [
             env.DB.prepare(
               `UPDATE entries
                SET title = COALESCE(?, title),
+                   subtitle = COALESCE(?, subtitle),
                    slug = COALESCE(?, slug),
                    entry_number = COALESCE(?, entry_number),
-                   study_id = COALESCE(?, study_id),
-                   rui_revision = COALESCE(?, rui_revision),
+                   study_id = ?,
+                   rui_revision = ?,
                    medium = ?,
                    summary = COALESCE(?, summary),
+                   excerpt = COALESCE(?, excerpt),
                    location = COALESCE(?, location),
                    archival_date = COALESCE(?, archival_date),
+                   display_date = COALESCE(?, display_date),
                    published_date = COALESCE(?, published_date),
                    last_modified_date = ?,
+                   featured_on_home = ?,
+                   home_layout_weight = COALESCE(?, home_layout_weight),
+                   cover_image = COALESCE(?, cover_image),
+                   cover_image_caption = COALESCE(?, cover_image_caption),
+                   cover_image_alt = COALESCE(?, cover_image_alt),
                    blocks = COALESCE(?, blocks),
+                   metadata = COALESCE(?, metadata),
                    visibility = COALESCE(?, visibility),
                    order_index = COALESCE(?, order_index),
                    updated_at = ?
                WHERE id = ?`
             ).bind(
               body.title ?? null,
+              body.subtitle ?? null,
               body.slug ?? null,
               body.entryNumber ?? null,
-              body.studyId ?? null,
-              body.ruiRevision ?? null,
+              updatedStudyId,
+              updatedRuiRevision,
               updatedMedium,
               body.summary ?? null,
+              body.excerpt ?? null,
               body.location ?? null,
               body.createdDate ?? null,
+              body.displayDate ?? null,
               body.publishedDate ?? null,
               lastModified,
+              updatedFeatured,
+              body.homeLayoutWeight ?? null,
+              body.coverImage ?? null,
+              body.coverImageCaption ?? null,
+              body.coverImageAlt ?? null,
               blocksJson,
+              metadataJson,
               body.visibility ?? null,
               typeof body.order === 'number' ? body.order : null,
               now,
@@ -1201,6 +1353,21 @@ export default {
             }
           }
 
+          if (Array.isArray(body.relatedEntryIds)) {
+            batchStatements.push(
+              env.DB.prepare('DELETE FROM entry_related_entries WHERE entry_id = ?').bind(entryId)
+            );
+            for (const reId of body.relatedEntryIds) {
+              if (reId) {
+                batchStatements.push(
+                  env.DB.prepare(
+                    'INSERT OR IGNORE INTO entry_related_entries (entry_id, related_entry_id, created_at) VALUES (?, ?, ?)'
+                  ).bind(entryId, reId, now)
+                );
+              }
+            }
+          }
+
           await env.DB.batch(batchStatements);
 
           const updatedEntry = await env.DB.prepare(
@@ -1211,31 +1378,40 @@ export default {
             return errorResponse('Failed to retrieve updated entry', 500);
           }
 
-          const [study, entryThreads, entryRelatedStudies] = await Promise.all([
-            env.DB.prepare('SELECT collection_id FROM studies WHERE id = ?')
-              .bind(updatedEntry.study_id)
-              .first<{ collection_id: string }>(),
+          const [study, entryThreads, entryRelatedStudies, entryRelatedEntries] = await Promise.all([
+            updatedEntry.study_id
+              ? env.DB.prepare('SELECT collection_id FROM studies WHERE id = ?')
+                  .bind(updatedEntry.study_id)
+                  .first<{ collection_id: string }>()
+              : Promise.resolve(null),
             env.DB.prepare('SELECT thread_id FROM entry_threads WHERE entry_id = ?')
               .bind(entryId)
               .all<{ thread_id: string }>(),
             env.DB.prepare('SELECT study_id FROM entry_related_studies WHERE entry_id = ?')
               .bind(entryId)
               .all<{ study_id: string }>(),
+            env.DB.prepare('SELECT related_entry_id FROM entry_related_entries WHERE entry_id = ?')
+              .bind(entryId)
+              .all<{ related_entry_id: string }>(),
           ]);
 
-          const studyCollectionMap = new Map<string, string>([
-            [updatedEntry.study_id, study?.collection_id || ''],
-          ]);
+          const studyCollectionMap = new Map<string, string>();
+          if (updatedEntry.study_id && study?.collection_id) {
+            studyCollectionMap.set(updatedEntry.study_id, study.collection_id);
+          }
           const entryThreadsMap = new Map<string, string[]>([
             [entryId, (entryThreads.results || []).map((r) => r.thread_id)],
           ]);
           const entryRelatedStudiesMap = new Map<string, string[]>([
             [entryId, (entryRelatedStudies.results || []).map((r) => r.study_id)],
           ]);
+          const entryRelatedEntriesMap = new Map<string, string[]>([
+            [entryId, (entryRelatedEntries.results || []).map((r) => r.related_entry_id)],
+          ]);
 
           return jsonResponse({
             success: true,
-            data: hydrateEntry(updatedEntry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap),
+            data: hydrateEntry(updatedEntry, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap),
           });
         }
 
@@ -1252,6 +1428,7 @@ export default {
           await env.DB.batch([
             env.DB.prepare('DELETE FROM entry_threads WHERE entry_id = ?').bind(entryId),
             env.DB.prepare('DELETE FROM entry_related_studies WHERE entry_id = ?').bind(entryId),
+            env.DB.prepare('DELETE FROM entry_related_entries WHERE entry_id = ? OR related_entry_id = ?').bind(entryId, entryId),
             env.DB.prepare('DELETE FROM entries WHERE id = ?').bind(entryId),
           ]);
 
