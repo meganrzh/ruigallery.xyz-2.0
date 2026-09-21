@@ -39,6 +39,15 @@ export type EntryBlock =
   | { type: 'observation'; date?: string; coordinates?: string; text: string; label?: string }
   | { type: 'code_or_data'; title?: string; content: string; language?: string };
 
+export const INITIAL_ENTRY_MEDIUMS = [
+  'Creative Writing',
+  'Clothing / Upcycling',
+  'Visual Work',
+  'Research / Inquiry',
+] as const;
+
+export type EntryMedium = (typeof INITIAL_ENTRY_MEDIUMS)[number] | (string & {});
+
 export interface Entry {
   id: string;
   slug: string;
@@ -47,6 +56,7 @@ export interface Entry {
   studyId: string;
   title: string;
   ruiRevision: RuiRevision;
+  medium?: EntryMedium;
   createdDate: string;
   lastModifiedDate?: string;
   publishedDate?: string;

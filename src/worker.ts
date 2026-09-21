@@ -79,6 +79,7 @@ export interface EntryRecord {
   study_id: string;
   title: string;
   rui_revision: string;
+  medium: string | null;
   summary: string | null;
   location: string | null;
   archival_date: string;
@@ -183,6 +184,7 @@ function hydrateEntry(
     collectionId: studyCollectionMap.get(entry.study_id) || '',
     title: entry.title,
     ruiRevision: entry.rui_revision,
+    medium: entry.medium || undefined,
     summary: entry.summary || '',
     location: entry.location || '',
     createdDate: entry.archival_date,
@@ -918,6 +920,7 @@ export default {
             studyId?: string;
             title?: string;
             ruiRevision?: string;
+            medium?: string;
             summary?: string;
             location?: string;
             createdDate?: string;
@@ -956,6 +959,7 @@ export default {
             `entry-${entryNumber}-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}` ||
             id;
           const ruiRevision = body.ruiRevision || 'REV 00';
+          const medium = body.medium?.trim() || null;
           const summary = body.summary || '';
           const location = body.location || '';
           const now = new Date().toISOString();
@@ -968,8 +972,8 @@ export default {
 
           const batchStatements: D1PreparedStatement[] = [
             env.DB.prepare(
-              `INSERT INTO entries (id, slug, entry_number, study_id, title, rui_revision, summary, location, archival_date, published_date, last_modified_date, blocks, visibility, order_index, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              `INSERT INTO entries (id, slug, entry_number, study_id, title, rui_revision, medium, summary, location, archival_date, published_date, last_modified_date, blocks, visibility, order_index, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).bind(
               id,
               slug,
@@ -977,6 +981,7 @@ export default {
               studyId,
               title,
               ruiRevision,
+              medium,
               summary,
               location,
               archivalDate,
@@ -1096,6 +1101,7 @@ export default {
             entryNumber?: string;
             studyId?: string;
             ruiRevision?: string;
+            medium?: string | null;
             summary?: string;
             location?: string;
             createdDate?: string;
@@ -1121,6 +1127,10 @@ export default {
           const now = new Date().toISOString();
           const lastModified = body.lastModifiedDate || now.slice(0, 10).replace(/-/g, '.');
           const blocksJson = body.blocks !== undefined ? JSON.stringify(body.blocks) : null;
+          const updatedMedium =
+            body.medium !== undefined
+              ? (body.medium ? body.medium.trim() : null)
+              : existing.medium;
 
           const batchStatements: D1PreparedStatement[] = [
             env.DB.prepare(
@@ -1130,6 +1140,7 @@ export default {
                    entry_number = COALESCE(?, entry_number),
                    study_id = COALESCE(?, study_id),
                    rui_revision = COALESCE(?, rui_revision),
+                   medium = ?,
                    summary = COALESCE(?, summary),
                    location = COALESCE(?, location),
                    archival_date = COALESCE(?, archival_date),
@@ -1146,6 +1157,7 @@ export default {
               body.entryNumber ?? null,
               body.studyId ?? null,
               body.ruiRevision ?? null,
+              updatedMedium,
               body.summary ?? null,
               body.location ?? null,
               body.createdDate ?? null,

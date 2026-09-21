@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   SlidersHorizontal,
   Plus,
   Trash2,
   Edit3,
+  Edit2,
   Eye,
   CheckCircle,
   FileText,
@@ -28,6 +29,7 @@ import {
   EntryBlock,
   AppView,
   RuiRevision,
+  INITIAL_ENTRY_MEDIUMS,
 } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { CuratedWorkEditor } from './CuratedWorkEditor';
@@ -77,6 +79,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [entryBlocks, setEntryBlocks] = useState<EntryBlock[]>([
     { type: 'paragraph', content: 'Type primary research observation or narrative note here...' },
   ]);
+
+  // Distinct Mediums available in archive (combines initial taxonomy + any custom entries)
+  const existingMediums = useMemo(() => {
+    const set = new Set<string>(INITIAL_ENTRY_MEDIUMS);
+    entries.forEach((e) => {
+      if (e.medium && e.medium.trim()) {
+        set.add(e.medium.trim());
+      }
+    });
+    return Array.from(set);
+  }, [entries]);
+
+  // New Entry Medium state
+  const [entryMedium, setEntryMedium] = useState<string>('Visual Work');
+  const [customEntryMedium, setCustomEntryMedium] = useState('');
+
+  // Editing existing Entry state
+  const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
+  const [editEntryTitle, setEditEntryTitle] = useState('');
+  const [editEntryMedium, setEditEntryMedium] = useState('');
+  const [editCustomEntryMedium, setEditCustomEntryMedium] = useState('');
+  const [editEntryRevision, setEditEntryRevision] = useState<RuiRevision>('REV 00');
+  const [editEntryCollectionId, setEditEntryCollectionId] = useState('');
+  const [editEntryStudyId, setEditEntryStudyId] = useState('');
+  const [editEntryLocation, setEditEntryLocation] = useState('');
+  const [editEntrySummary, setEditEntrySummary] = useState('');
+  const [editEntryVisibility, setEditEntryVisibility] = useState<'published' | 'draft'>('published');
+  const [editEntryThreadIds, setEditEntryThreadIds] = useState<string[]>([]);
+  const [isSavingEntry, setIsSavingEntry] = useState(false);
 
   // Preview Modal
   const [previewEntry, setPreviewEntry] = useState<Entry | null>(null);
@@ -230,6 +261,66 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     setEntryBlocks(next);
   };
 
+  const startEditEntry = (entry: Entry) => {
+    setEditingEntry(entry);
+    setEditEntryTitle(entry.title);
+    setEditEntryRevision(entry.ruiRevision);
+    setEditEntryCollectionId(entry.collectionId);
+    setEditEntryStudyId(entry.studyId);
+    setEditEntryLocation(entry.location || '');
+    setEditEntrySummary(entry.summary || '');
+    setEditEntryVisibility(entry.visibility);
+    setEditEntryThreadIds([...entry.threadIds]);
+
+    if (entry.medium) {
+      if (existingMediums.includes(entry.medium)) {
+        setEditEntryMedium(entry.medium);
+        setEditCustomEntryMedium('');
+      } else {
+        setEditEntryMedium('__custom__');
+        setEditCustomEntryMedium(entry.medium);
+      }
+    } else {
+      setEditEntryMedium('__none__');
+      setEditCustomEntryMedium('');
+    }
+  };
+
+  const handleSaveEntryEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEntry || !editEntryTitle.trim()) return;
+    setIsSavingEntry(true);
+
+    let finalMedium: string | null = null;
+    if (editEntryMedium === '__custom__') {
+      finalMedium = editCustomEntryMedium.trim() || null;
+    } else if (editEntryMedium && editEntryMedium !== '__none__') {
+      finalMedium = editEntryMedium.trim();
+    }
+
+    try {
+      await updateEntry(editingEntry.id, {
+        title: editEntryTitle,
+        medium: finalMedium || undefined,
+        ruiRevision: editEntryRevision,
+        collectionId: editEntryCollectionId,
+        studyId: editEntryStudyId,
+        location: editEntryLocation,
+        summary: editEntrySummary,
+        visibility: editEntryVisibility,
+        threadIds: editEntryThreadIds,
+      });
+      setSuccessMessage(`Entry "${editEntryTitle}" updated successfully.`);
+      setEditingEntry(null);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error updating entry';
+      setErrorMessage(`Failed to update entry: ${msg}`);
+    } finally {
+      setIsSavingEntry(false);
+    }
+  };
+
   // Submit Entry
   const handlePublishEntry = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -246,6 +337,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
 
     const createdDate = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
 
+    let finalNewMedium: string | undefined = undefined;
+    if (entryMedium === '__custom__') {
+      finalNewMedium = customEntryMedium.trim() || undefined;
+    } else if (entryMedium && entryMedium !== '__none__') {
+      finalNewMedium = entryMedium.trim() || undefined;
+    }
+
     try {
       await addEntry({
         slug,
@@ -254,6 +352,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         studyId: entryStudyId || availableStudies[0]?.id || studies[0]?.id,
         title: entryTitle,
         ruiRevision: entryRevision,
+        medium: finalNewMedium,
         createdDate,
         publishedDate: createdDate,
         location: entryLocation,
@@ -272,6 +371,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       setEntryTitle('');
       setEntrySummary('');
       setEntryBlocks([{ type: 'paragraph', content: '' }]);
+      setCustomEntryMedium('');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error publishing entry';
       setErrorMessage(`Failed to publish entry to persistent store: ${msg}`);
@@ -544,12 +644,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                   key={entry.id}
                   className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#F4F3EE]"
                 >
-                  <div className="space-y-1">
+                    <div className="space-y-1">
                     <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82]">
                       <span className="text-[#141413] font-semibold">{entry.createdDate}</span>
                       <span>•</span>
                       <span>ENTRY {entry.entryNumber}</span>
                       <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B]">{entry.ruiRevision}</span>
+                      {entry.medium && (
+                        <span className="px-1.5 py-0.2 bg-[#EFEFEA] border border-[#E5E3DB] text-[#141413] text-[10px] font-medium">
+                          {entry.medium}
+                        </span>
+                      )}
                       <span className={`px-1.5 py-0.2 text-[10px] ${entry.visibility === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                         {entry.visibility.toUpperCase()}
                       </span>
@@ -566,6 +671,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                     >
                       <Eye className="w-3 h-3" />
                       <span>View</span>
+                    </button>
+                    <button
+                      onClick={() => startEditEntry(entry)}
+                      className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1"
+                    >
+                      <Edit2 className="w-3 h-3 text-[#9E2A2B]" />
+                      <span>Edit</span>
                     </button>
                     <button
                       onClick={async () => {
@@ -605,6 +717,233 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                 </div>
               ))}
             </div>
+
+            {/* Entry Edit Modal */}
+            {editingEntry && (
+              <div className="fixed inset-0 z-50 bg-[#141413]/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+                <div className="bg-[#FBFBFA] border border-[#141413] max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-xl my-8">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#E5E3DB]">
+                    <div>
+                      <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82] tracking-wider uppercase mb-1">
+                        <span>ENTRY {editingEntry.entryNumber}</span>
+                        <span>•</span>
+                        <span className="text-[#9E2A2B] font-semibold">EDIT RECORD & MEDIUM</span>
+                      </div>
+                      <h2 className="font-serif text-xl sm:text-2xl text-[#141413] font-medium">
+                        Edit Entry Metadata
+                      </h2>
+                    </div>
+                    <button
+                      onClick={() => setEditingEntry(null)}
+                      className="p-1 text-[#8C8C82] hover:text-[#141413]"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveEntryEdit} className="space-y-4 font-mono-archival text-xs">
+                    {/* Title */}
+                    <div>
+                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                        Entry Title *
+                      </label>
+                      <input
+                        type="text"
+                        value={editEntryTitle}
+                        onChange={(e) => setEditEntryTitle(e.target.value)}
+                        className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413] font-serif text-base"
+                        required
+                      />
+                    </div>
+
+                    {/* Medium Selection (Extensible) */}
+                    <div className="p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
+                      <label className="block text-[#141413] text-[11px] font-semibold uppercase flex items-center justify-between">
+                        <span>Creative Medium Classification</span>
+                        <span className="text-[#8C8C82] text-[10px] font-normal">Controls Laboratory Medium Filter</span>
+                      </label>
+                      <select
+                        value={editEntryMedium}
+                        onChange={(e) => setEditEntryMedium(e.target.value)}
+                        className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
+                      >
+                        <option value="__none__">(No Medium Assigned / Unclassified)</option>
+                        {existingMediums.map((med) => (
+                          <option key={med} value={med}>
+                            {med}
+                          </option>
+                        ))}
+                        <option value="__custom__">+ Custom / New Medium...</option>
+                      </select>
+
+                      {editEntryMedium === '__custom__' && (
+                        <div className="pt-2">
+                          <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                            Custom Medium Name
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Architectural Casting, Sound Recording..."
+                            value={editCustomEntryMedium}
+                            onChange={(e) => setEditCustomEntryMedium(e.target.value)}
+                            className="w-full p-2 bg-[#FBFBFA] border border-[#141413] text-[#141413]"
+                            autoFocus
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Revision */}
+                      <div>
+                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                          RUI Revision *
+                        </label>
+                        <select
+                          value={editEntryRevision}
+                          onChange={(e) => setEditEntryRevision(e.target.value as RuiRevision)}
+                          className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
+                        >
+                          <option value="REV 00">REV 00 (Initial State)</option>
+                          <option value="REV 01">REV 01 (Major Maturation)</option>
+                          <option value="REV 02">REV 02 (Expanded Fieldwork)</option>
+                          <option value="REV 03">REV 03 (Resolved Thesis)</option>
+                        </select>
+                      </div>
+
+                      {/* Visibility */}
+                      <div>
+                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                          Visibility Status
+                        </label>
+                        <select
+                          value={editEntryVisibility}
+                          onChange={(e) => setEditEntryVisibility(e.target.value as 'published' | 'draft')}
+                          className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
+                        >
+                          <option value="published">Published (Public)</option>
+                          <option value="draft">Draft (Restricted)</option>
+                        </select>
+                      </div>
+
+                      {/* Collection */}
+                      <div>
+                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                          Collection *
+                        </label>
+                        <select
+                          value={editEntryCollectionId}
+                          onChange={(e) => setEditEntryCollectionId(e.target.value)}
+                          className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
+                        >
+                          {collections.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Study */}
+                      <div>
+                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                          Study *
+                        </label>
+                        <select
+                          value={editEntryStudyId}
+                          onChange={(e) => setEditEntryStudyId(e.target.value)}
+                          className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
+                        >
+                          {studies
+                            .filter((s) => s.collectionId === editEntryCollectionId)
+                            .map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.title}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Location */}
+                    <div>
+                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                        Location / Coordinates
+                      </label>
+                      <input
+                        type="text"
+                        value={editEntryLocation}
+                        onChange={(e) => setEditEntryLocation(e.target.value)}
+                        className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
+                      />
+                    </div>
+
+                    {/* Summary */}
+                    <div>
+                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                        Summary / Thesis Note
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={editEntrySummary}
+                        onChange={(e) => setEditEntrySummary(e.target.value)}
+                        className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413] font-serif text-sm"
+                      />
+                    </div>
+
+                    {/* Thread checkboxes */}
+                    <div>
+                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1.5">
+                        Associated Threads
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {threads.map((t) => {
+                          const isChecked = editEntryThreadIds.includes(t.id);
+                          return (
+                            <button
+                              type="button"
+                              key={t.id}
+                              onClick={() => {
+                                if (isChecked) {
+                                  setEditEntryThreadIds(editEntryThreadIds.filter((id) => id !== t.id));
+                                } else {
+                                  setEditEntryThreadIds([...editEntryThreadIds, t.id]);
+                                }
+                              }}
+                              className={`px-2 py-0.5 border text-[11px] transition-colors ${
+                                isChecked
+                                  ? 'bg-[#141413] text-[#FBFBFA] border-[#141413]'
+                                  : 'bg-[#F4F3EE] text-[#4A4A44] border-[#E5E3DB]'
+                              }`}
+                            >
+                              #{t.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="pt-4 border-t border-[#E5E3DB] flex items-center justify-end space-x-3">
+                      <button
+                        type="button"
+                        onClick={() => setEditingEntry(null)}
+                        className="px-4 py-2 border border-[#E5E3DB] text-[#6E6E66] hover:text-[#141413] hover:border-[#141413] transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSavingEntry}
+                        className="px-5 py-2 bg-[#141413] text-[#FBFBFA] hover:bg-[#9E2A2B] transition-colors font-medium flex items-center space-x-1.5"
+                      >
+                        {isSavingEntry ? <span>Saving...</span> : <span>Save Entry Changes</span>}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -640,6 +979,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                     onChange={(e) => setEntryTitle(e.target.value)}
                     className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413] font-serif text-base focus:outline-hidden focus:border-[#141413]"
                   />
+                </div>
+
+                {/* Medium Selection (Extensible) */}
+                <div className="sm:col-span-1">
+                  <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                    Creative Medium *
+                  </label>
+                  <select
+                    value={entryMedium}
+                    onChange={(e) => setEntryMedium(e.target.value)}
+                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
+                  >
+                    {existingMediums.map((med) => (
+                      <option key={med} value={med}>
+                        {med}
+                      </option>
+                    ))}
+                    <option value="__custom__">+ Custom / New Medium...</option>
+                    <option value="__none__">(No Medium Assigned)</option>
+                  </select>
+
+                  {entryMedium === '__custom__' && (
+                    <input
+                      type="text"
+                      placeholder="Type custom medium name..."
+                      value={customEntryMedium}
+                      onChange={(e) => setCustomEntryMedium(e.target.value)}
+                      className="w-full p-2 mt-2 bg-[#FBFBFA] border border-[#141413] text-[#141413]"
+                      autoFocus
+                    />
+                  )}
                 </div>
 
                 {/* Revision */}

@@ -54,6 +54,7 @@ export interface RawHydratedEntry {
   collectionId: string;
   title: string;
   ruiRevision: string;
+  medium?: string | null;
   summary?: string;
   location?: string;
   createdDate: string;
@@ -114,6 +115,7 @@ export function mapRawToEntry(raw: RawHydratedEntry): Entry {
     studyId: raw.studyId,
     title: raw.title,
     ruiRevision: (raw.ruiRevision || 'REV 00') as RuiRevision,
+    medium: raw.medium || undefined,
     createdDate: raw.createdDate,
     lastModifiedDate: raw.lastModifiedDate || undefined,
     publishedDate: raw.publishedDate || undefined,

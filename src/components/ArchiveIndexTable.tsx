@@ -40,7 +40,8 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
           const matchSummary = entry.summary?.toLowerCase().includes(query);
           const matchNum = entry.entryNumber.includes(query);
           const matchRev = entry.ruiRevision.toLowerCase().includes(query);
-          return matchTitle || matchLocation || matchSummary || matchNum || matchRev;
+          const matchMedium = entry.medium?.toLowerCase().includes(query);
+          return matchTitle || matchLocation || matchSummary || matchNum || matchRev || matchMedium;
         }
         return true;
       })
@@ -236,6 +237,9 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
                 <th className="py-3 px-4 font-medium whitespace-nowrap hidden lg:table-cell">
                   LOCATION
                 </th>
+                <th className="py-3 px-3 font-medium whitespace-nowrap hidden md:table-cell">
+                  MEDIUM
+                </th>
                 <th className="py-3 px-4 font-medium whitespace-nowrap hidden sm:table-cell">
                   THREADS
                 </th>
@@ -245,7 +249,7 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
             <tbody className="divide-y divide-[#E5E3DB]">
               {filteredEntries.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-[#8C8C82]">
+                  <td colSpan={9} className="py-12 text-center text-[#8C8C82]">
                     No archive records match your query.
                   </td>
                 </tr>
@@ -297,6 +301,17 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
                       {/* Location */}
                       <td className="py-3.5 px-4 hidden lg:table-cell text-[#8C8C82] whitespace-nowrap">
                         {entry.location || '—'}
+                      </td>
+
+                      {/* Medium */}
+                      <td className="py-3.5 px-3 hidden md:table-cell whitespace-nowrap">
+                        {entry.medium ? (
+                          <span className="px-1.5 py-0.5 bg-[#EAE8E0] text-[#141413] border border-[#D5D3CB] text-[10px] font-medium">
+                            {entry.medium}
+                          </span>
+                        ) : (
+                          <span className="text-[#8C8C82] text-[11px]">—</span>
+                        )}
                       </td>
 
                       {/* Threads */}

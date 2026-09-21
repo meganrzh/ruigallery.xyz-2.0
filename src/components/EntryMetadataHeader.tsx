@@ -29,6 +29,14 @@ export const EntryMetadataHeader: React.FC<EntryMetadataHeaderProps> = ({
           <span className="px-1.5 py-0.5 bg-[#FBFBFA] border border-[#D5D3CB] text-[#9E2A2B] font-semibold">
             {entry.ruiRevision}
           </span>
+          {entry.medium && (
+            <>
+              <span className="text-[#8C8C82]">•</span>
+              <span className="px-1.5 py-0.5 bg-[#FBFBFA] border border-[#D5D3CB] text-[#141413] font-medium text-[10px] tracking-wider">
+                {entry.medium.toUpperCase()}
+              </span>
+            </>
+          )}
           {entry.visibility === 'draft' && (
             <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 text-[10px]">
               DRAFT
@@ -44,7 +52,7 @@ export const EntryMetadataHeader: React.FC<EntryMetadataHeaderProps> = ({
       </div>
 
       {/* Structured Metadata Grid */}
-      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-y-3 gap-x-6">
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-y-3 gap-x-6">
         {/* Collection */}
         <div>
           <span className="block text-[10px] text-[#8C8C82] uppercase tracking-wider">
@@ -77,6 +85,16 @@ export const EntryMetadataHeader: React.FC<EntryMetadataHeaderProps> = ({
           ) : (
             <span className="text-[#8C8C82]">—</span>
           )}
+        </div>
+
+        {/* Medium */}
+        <div>
+          <span className="block text-[10px] text-[#8C8C82] uppercase tracking-wider">
+            Medium
+          </span>
+          <span className="text-[#141413]">
+            {entry.medium || '—'}
+          </span>
         </div>
 
         {/* Location */}
