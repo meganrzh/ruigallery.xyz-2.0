@@ -476,6 +476,7 @@ export async function handleAdminMutationRoutes(
       id?: string;
       slug?: string;
       entryNumber?: string;
+      collectionId?: string | null;
       studyId?: string | null;
       title?: string;
       subtitle?: string | null;
@@ -507,6 +508,14 @@ export async function handleAdminMutationRoutes(
       return errorResponse('Entry title is required', 400);
     }
 
+    let collectionId = body.collectionId?.trim() || null;
+    if (collectionId) {
+      const col = await env.DB.prepare('SELECT id FROM collections WHERE id = ?').bind(collectionId).first();
+      if (!col) {
+        return errorResponse(`Referenced collection '${collectionId}' does not exist`, 400);
+      }
+    }
+
     const studyId = body.studyId?.trim() || null;
     let studyCollectionId = '';
     if (studyId) {
@@ -518,6 +527,9 @@ export async function handleAdminMutationRoutes(
         return errorResponse(`Referenced study '${studyId}' does not exist`, 400);
       }
       studyCollectionId = study.collection_id;
+      if (!collectionId) {
+        collectionId = study.collection_id;
+      }
     }
 
     const id = body.id || `entry-${Date.now()}`;
@@ -550,16 +562,17 @@ export async function handleAdminMutationRoutes(
     const batchStatements: D1PreparedStatement[] = [
       env.DB.prepare(
         `INSERT INTO entries (
-          id, slug, entry_number, study_id, title, subtitle, rui_revision,
+          id, slug, entry_number, collection_id, study_id, title, subtitle, rui_revision,
           medium, summary, excerpt, location, archival_date, display_date,
           published_date, last_modified_date, featured_on_home, home_layout_weight,
           cover_image, cover_image_caption, cover_image_alt, blocks, metadata,
           visibility, order_index, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         id,
         slug,
         entryNumber,
+        collectionId,
         studyId,
         title,
         subtitle,
@@ -657,6 +670,7 @@ export async function handleAdminMutationRoutes(
       const body = (await request.json()) as {
         slug?: string;
         entryNumber?: string;
+        collectionId?: string | null;
         studyId?: string | null;
         title?: string;
         subtitle?: string | null;
@@ -688,15 +702,32 @@ export async function handleAdminMutationRoutes(
         return errorResponse('Entry title cannot be empty', 400);
       }
 
+      let collectionId = existingEntry.collection_id ?? null;
+      if (body.collectionId !== undefined) {
+        const trimmedCol = body.collectionId?.trim() || null;
+        if (trimmedCol) {
+          const col = await env.DB.prepare('SELECT id FROM collections WHERE id = ?').bind(trimmedCol).first();
+          if (!col) {
+            return errorResponse(`Referenced collection '${trimmedCol}' does not exist`, 400);
+          }
+          collectionId = trimmedCol;
+        } else {
+          collectionId = null;
+        }
+      }
+
       let studyId = existingEntry.study_id;
       if (body.studyId !== undefined) {
         const trimmed = body.studyId?.trim() || null;
         if (trimmed) {
-          const study = await env.DB.prepare('SELECT id FROM studies WHERE id = ?').bind(trimmed).first();
+          const study = await env.DB.prepare('SELECT id, collection_id FROM studies WHERE id = ?').bind(trimmed).first<{ id: string; collection_id: string }>();
           if (!study) {
             return errorResponse(`Referenced study '${trimmed}' does not exist`, 400);
           }
           studyId = trimmed;
+          if (body.collectionId === undefined && !collectionId) {
+            collectionId = study.collection_id;
+          }
         } else {
           studyId = null;
         }
@@ -732,7 +763,7 @@ export async function handleAdminMutationRoutes(
       const batchStatements: D1PreparedStatement[] = [
         env.DB.prepare(
           `UPDATE entries SET
-            slug = ?, entry_number = ?, study_id = ?, title = ?, subtitle = ?,
+            slug = ?, entry_number = ?, collection_id = ?, study_id = ?, title = ?, subtitle = ?,
             rui_revision = ?, medium = ?, summary = ?, excerpt = ?, location = ?,
             archival_date = ?, display_date = ?, published_date = ?, last_modified_date = ?,
             featured_on_home = ?, home_layout_weight = ?, cover_image = ?, cover_image_caption = ?,
@@ -742,6 +773,7 @@ export async function handleAdminMutationRoutes(
         ).bind(
           slug,
           entryNumber,
+          collectionId,
           studyId,
           title,
           subtitle,

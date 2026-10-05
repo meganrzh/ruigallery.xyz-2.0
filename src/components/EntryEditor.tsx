@@ -193,8 +193,8 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
     const payload: Omit<Entry, 'id'> = {
       slug: slug.trim() || `entry-${entryNumber}`,
       entryNumber: entryNumber.trim() || '000',
-      collectionId: collectionId.trim() || undefined,
-      studyId: studyId.trim() || undefined,
+      collectionId: collectionId.trim() ? collectionId.trim() : null,
+      studyId: studyId.trim() ? studyId.trim() : null,
       title: title.trim(),
       subtitle: subtitle.trim() || undefined,
       ruiRevision: ruiRevision ? (ruiRevision as RuiRevision) : null,

@@ -82,6 +82,7 @@ export interface EntryRecord {
   id: string;
   slug: string;
   entry_number: string;
+  collection_id?: string | null;
   study_id: string | null;
   title: string;
   subtitle: string | null;
@@ -458,12 +459,16 @@ export function hydrateEntry(
     metadata = {};
   }
 
+  const directCollectionId = (entry.collection_id && entry.collection_id.trim()) || undefined;
+  const fallbackCollectionId = entry.study_id ? (studyCollectionMap.get(entry.study_id) || undefined) : undefined;
+  const resolvedCollectionId = directCollectionId || fallbackCollectionId || undefined;
+
   return {
     id: entry.id,
     slug: entry.slug,
     entryNumber: entry.entry_number,
     studyId: entry.study_id || undefined,
-    collectionId: entry.study_id ? (studyCollectionMap.get(entry.study_id) || '') : undefined,
+    collectionId: resolvedCollectionId,
     title: entry.title,
     subtitle: entry.subtitle || undefined,
     ruiRevision: entry.rui_revision !== undefined ? entry.rui_revision : null,

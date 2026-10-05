@@ -57,8 +57,8 @@ export interface Entry {
   id: string;
   slug: string;
   entryNumber: string; // e.g. "001", "004", "014", "015"
-  collectionId?: string;
-  studyId?: string; // Optional: entries can exist outside of a study
+  collectionId?: string | null;
+  studyId?: string | null; // Optional: entries can exist outside of a study
   title: string;
   subtitle?: string;
   ruiRevision?: RuiRevision | null; // Nullable for works without revision
