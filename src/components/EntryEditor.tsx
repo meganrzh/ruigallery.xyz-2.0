@@ -32,6 +32,7 @@ import {
   INITIAL_ENTRY_MEDIUMS,
 } from '../types';
 import { EntryReaderPreview } from './EntryReaderPreview';
+import { FormattedTextarea } from '../utils/textFormatting';
 
 interface EntryEditorProps {
   initialEntry?: Entry | null;
@@ -841,23 +842,25 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
 
                 {/* Block Editors */}
                 {(block.type === 'paragraph' || block.type === 'text') && (
-                  <textarea
+                  <FormattedTextarea
                     rows={4}
                     value={block.content}
-                    onChange={(e) => updateBlockAt(idx, { ...block, content: e.target.value })}
+                    onChange={(val) => updateBlockAt(idx, { ...block, content: val })}
                     placeholder="Write narrative prose or body paragraph..."
-                    className="w-full p-2.5 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-base text-[#141413]"
+                    label="Narrative Prose"
                   />
                 )}
 
                 {block.type === 'pullquote' && (
                   <div className="space-y-2">
-                    <textarea
+                    <FormattedTextarea
                       rows={2}
                       value={block.quote}
-                      onChange={(e) => updateBlockAt(idx, { ...block, quote: e.target.value })}
+                      onChange={(val) => updateBlockAt(idx, { ...block, quote: val })}
                       placeholder="Emphasized pullquote or excerpt..."
-                      className="w-full p-2.5 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-lg italic text-[#141413]"
+                      className="w-full p-2.5 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-lg text-[#141413]"
+                      italicFont={true}
+                      label="Pullquote Text"
                     />
                     <input
                       type="text"
@@ -934,12 +937,14 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
 
                 {block.type === 'fragment' && (
                   <div className="space-y-2">
-                    <textarea
+                    <FormattedTextarea
                       rows={2}
                       value={block.note}
-                      onChange={(e) => updateBlockAt(idx, { ...block, note: e.target.value })}
+                      onChange={(val) => updateBlockAt(idx, { ...block, note: val })}
                       placeholder="Fragment text or field notation..."
-                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-base italic text-[#141413]"
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-base text-[#141413]"
+                      italicFont={true}
+                      label="Fragment Note"
                     />
                     <input
                       type="text"
@@ -960,12 +965,13 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                       placeholder="Coordinates or site indicator (e.g. 45.4408° N, 12.3155° E)"
                       className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
                     />
-                    <textarea
+                    <FormattedTextarea
                       rows={2}
                       value={block.text}
-                      onChange={(e) => updateBlockAt(idx, { ...block, text: e.target.value })}
+                      onChange={(val) => updateBlockAt(idx, { ...block, text: val })}
                       placeholder="Observation narrative..."
-                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-sm"
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] font-serif text-sm text-[#141413]"
+                      label="Observation Narrative"
                     />
                   </div>
                 )}

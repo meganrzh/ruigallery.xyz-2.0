@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowLeft, ArrowRight, Compass, Calendar, MapPin, Clock, Layers } from 'lucide-react';
 import { CuratedWork, AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { renderFormattedText } from '../utils/textFormatting';
 
 interface CuratedWorkDetailProps {
   slug: string;
@@ -124,7 +125,7 @@ export const CuratedWorkDetail: React.FC<CuratedWorkDetailProps> = ({ slug, onNa
             if (block.type === 'text') {
               return (
                 <div key={idx} className="font-serif text-lg sm:text-xl text-[#2C2C28] leading-relaxed max-w-prose">
-                  {block.content}
+                  {renderFormattedText(block.content)}
                 </div>
               );
             }
@@ -133,7 +134,7 @@ export const CuratedWorkDetail: React.FC<CuratedWorkDetailProps> = ({ slug, onNa
               return (
                 <div key={idx} className="my-12 py-8 px-8 bg-[#F4F3EE] border-y border-[#E5E3DB] text-center space-y-3">
                   <blockquote className="font-serif text-xl sm:text-2xl text-[#141413] italic leading-relaxed">
-                    “{block.quote}”
+                    “{renderFormattedText(block.quote)}”
                   </blockquote>
                   {block.attribution && (
                     <cite className="block text-xs font-mono-archival text-[#8C8C82] not-italic">

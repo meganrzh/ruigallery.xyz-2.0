@@ -1,6 +1,7 @@
 import React from 'react';
 import { EntryBlock } from '../types';
 import { Quote, FileText, Bookmark, ExternalLink } from 'lucide-react';
+import { renderFormattedText } from '../utils/textFormatting';
 
 interface EntryBodyRendererProps {
   blocks: EntryBlock[];
@@ -18,7 +19,7 @@ export const EntryBodyRenderer: React.FC<EntryBodyRendererProps> = ({ blocks }) 
                 key={idx}
                 className="font-serif text-lg sm:text-xl text-[#2C2C28] leading-relaxed max-w-prose"
               >
-                {block.content}
+                {renderFormattedText(block.content)}
               </p>
             );
 
@@ -26,7 +27,7 @@ export const EntryBodyRenderer: React.FC<EntryBodyRendererProps> = ({ blocks }) 
             return (
               <div key={idx} className="my-10 py-8 px-8 bg-[#F4F3EE] border-y border-[#E5E3DB] text-center space-y-3">
                 <blockquote className="font-serif text-xl sm:text-2xl text-[#141413] italic leading-relaxed">
-                  “{block.quote}”
+                  “{renderFormattedText(block.quote)}”
                 </blockquote>
                 {block.attribution && (
                   <cite className="block text-xs font-mono-archival text-[#8C8C82] not-italic">
@@ -80,7 +81,7 @@ export const EntryBodyRenderer: React.FC<EntryBodyRendererProps> = ({ blocks }) 
               >
                 <div className="flex items-start space-x-2">
                   <Quote className="w-4 h-4 text-[#8C8C82] shrink-0 mt-1 not-italic" />
-                  <p className="leading-relaxed">{block.note}</p>
+                  <p className="leading-relaxed">{renderFormattedText(block.note)}</p>
                 </div>
                 {block.source && (
                   <span className="block text-xs font-mono-archival text-[#8C8C82] not-italic pl-6">
@@ -134,7 +135,7 @@ export const EntryBodyRenderer: React.FC<EntryBodyRendererProps> = ({ blocks }) 
                   </div>
                 </div>
                 <p className="font-serif text-base text-[#2C2C28] leading-relaxed pt-1">
-                  {block.text}
+                  {renderFormattedText(block.text)}
                 </p>
               </div>
             );
@@ -153,7 +154,7 @@ export const EntryBodyRenderer: React.FC<EntryBodyRendererProps> = ({ blocks }) 
                       <span className="font-mono-archival text-xs text-[#8C8C82] shrink-0 mt-0.5">
                         {String(itemIdx + 1).padStart(2, '0')}.
                       </span>
-                      <span className="leading-relaxed">{item}</span>
+                      <span className="leading-relaxed">{renderFormattedText(item)}</span>
                     </li>
                   ))}
                 </ul>
