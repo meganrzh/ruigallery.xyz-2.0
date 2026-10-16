@@ -171,9 +171,11 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
     setBlocks(copy);
   };
 
-  // Save handler
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Save handler with explicit draft / published target
+  const handleSubmit = async (e?: React.FormEvent, targetVisibility?: 'published' | 'draft') => {
+    if (e) {
+      e.preventDefault();
+    }
     if (!title.trim()) {
       setFormError('Please enter an Entry Title.');
       return;
@@ -181,6 +183,9 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
 
     setFormError(null);
     setIsSaving(true);
+
+    const effectiveVisibility = targetVisibility || visibility;
+    const effectiveFeatured = effectiveVisibility === 'draft' ? false : featuredOnHome;
 
     let finalMedium: string | undefined = undefined;
     if (mediumChoice === '__custom__') {
@@ -212,8 +217,8 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
       summary: summary.trim() || undefined,
       excerpt: summary.trim() || undefined,
       blocks,
-      visibility,
-      featuredOnHome,
+      visibility: effectiveVisibility,
+      featuredOnHome: effectiveFeatured,
       homeLayoutWeight,
       coverImage: coverImage.trim() || undefined,
       coverImageCaption: coverImageCaption.trim() || undefined,
@@ -262,6 +267,15 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
               <span className="text-[#9E2A2B] font-semibold">
                 {isEditing ? `EDIT ENTRY ${entryNumber}` : 'AUTHOR NEW ENTRY'}
               </span>
+              <span
+                className={`px-1.5 py-0.2 text-[9px] font-medium tracking-wide uppercase ${
+                  visibility === 'published'
+                    ? 'bg-[#EAE8E0] text-[#141413] border border-[#D5D3CB]'
+                    : 'bg-[#FAF0E6] text-[#B45309] border border-[#FDE68A]'
+                }`}
+              >
+                {visibility.toUpperCase()}
+              </span>
             </div>
             <h2 className="font-serif text-lg text-[#141413] font-medium truncate max-w-md">
               {title || 'Untitled Archival Entry'}
@@ -269,7 +283,7 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setShowReaderPreview(true)}
@@ -279,15 +293,73 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
             <span>Reader Preview</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isSaving}
-            className="px-4 py-1.5 bg-[#9E2A2B] hover:bg-[#801C1D] text-[#FBFBFA] flex items-center space-x-1.5 font-medium transition-colors disabled:opacity-50"
-          >
-            <Check className="w-3.5 h-3.5" />
-            <span>{isSaving ? 'Saving...' : isEditing ? 'Update Entry' : 'Publish Entry'}</span>
-          </button>
+          {!isEditing ? (
+            <>
+              <button
+                type="button"
+                onClick={() => handleSubmit(undefined, 'draft')}
+                disabled={isSaving}
+                className="px-3.5 py-1.5 bg-[#FBFBFA] border border-[#D5D3CB] hover:border-[#141413] text-[#141413] flex items-center space-x-1.5 font-medium transition-colors disabled:opacity-50"
+                title="Save as Draft (Assigns accession number, excluded from public archive)"
+              >
+                <span>{isSaving ? 'Saving...' : 'Save as Draft'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSubmit(undefined, 'published')}
+                disabled={isSaving}
+                className="px-4 py-1.5 bg-[#9E2A2B] hover:bg-[#801C1D] text-[#FBFBFA] flex items-center space-x-1.5 font-medium transition-colors disabled:opacity-50"
+                title="Publish Entry (Assigns accession number and publishes publicly)"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Publishing...' : 'Publish Entry'}</span>
+              </button>
+            </>
+          ) : visibility === 'draft' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => handleSubmit(undefined, 'draft')}
+                disabled={isSaving}
+                className="px-3.5 py-1.5 bg-[#FBFBFA] border border-[#D5D3CB] hover:border-[#141413] text-[#141413] flex items-center space-x-1.5 font-medium transition-colors disabled:opacity-50"
+                title="Save changes and keep in Draft state"
+              >
+                <span>{isSaving ? 'Saving...' : 'Save Draft'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSubmit(undefined, 'published')}
+                disabled={isSaving}
+                className="px-4 py-1.5 bg-[#9E2A2B] hover:bg-[#801C1D] text-[#FBFBFA] flex items-center space-x-1.5 font-medium transition-colors disabled:opacity-50"
+                title="Publish Draft to Public Archive"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Publishing...' : 'Publish Entry'}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => handleSubmit(undefined, 'draft')}
+                disabled={isSaving}
+                className="px-3 py-1.5 bg-[#FAF0E6] border border-[#FDE68A] hover:border-[#B45309] text-[#B45309] flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+                title="Revert published entry back to Draft (unlisted from public archive)"
+              >
+                <span>{isSaving ? 'Updating...' : 'Move to Draft'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSubmit(undefined, 'published')}
+                disabled={isSaving}
+                className="px-4 py-1.5 bg-[#9E2A2B] hover:bg-[#801C1D] text-[#FBFBFA] flex items-center space-x-1.5 font-medium transition-colors disabled:opacity-50"
+                title="Save changes to published entry"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -346,16 +418,21 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
             {/* Visibility */}
             <div className="md:col-span-2">
               <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                Visibility Status
+                Publication Status
               </label>
               <select
                 value={visibility}
-                onChange={(e) => setVisibility(e.target.value as Entry['visibility'])}
-                className="w-full p-2.5 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
+                onChange={(e) => {
+                  const val = e.target.value as Entry['visibility'];
+                  setVisibility(val);
+                  if (val === 'draft') {
+                    setFeaturedOnHome(false);
+                  }
+                }}
+                className="w-full p-2.5 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413] font-medium"
               >
-                <option value="published">Published</option>
-                <option value="draft">Draft</option>
-                <option value="hidden">Hidden</option>
+                <option value="draft">Draft (Unlisted)</option>
+                <option value="published">Published (Public)</option>
               </select>
             </div>
 
@@ -582,19 +659,25 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                     Feature on Homepage Grid
                   </span>
                   <span className="text-[10px] text-[#8C8C82]">
-                    Display this Entry directly in the curated showcase on the home page.
+                    {visibility === 'draft'
+                      ? 'Draft entries are ineligible for Homepage curation until published.'
+                      : 'Display this Entry directly in the curated showcase on the home page.'}
                   </span>
                 </div>
                 <button
                   type="button"
+                  disabled={visibility === 'draft'}
                   onClick={() => setFeaturedOnHome(!featuredOnHome)}
                   className={`px-3 py-1 text-xs border transition-colors ${
-                    featuredOnHome
+                    visibility === 'draft'
+                      ? 'bg-[#F4F3EE] text-[#A8A8A0] border-[#E5E3DB] cursor-not-allowed'
+                      : featuredOnHome
                       ? 'bg-[#141413] text-[#FBFBFA] border-[#141413]'
                       : 'bg-[#FBFBFA] text-[#6E6E66] border-[#E5E3DB]'
                   }`}
+                  title={visibility === 'draft' ? 'Drafts cannot be featured on Homepage' : undefined}
                 >
-                  {featuredOnHome ? 'FEATURED' : 'NOT FEATURED'}
+                  {visibility === 'draft' ? 'LOCKED (DRAFT)' : featuredOnHome ? 'FEATURED' : 'NOT FEATURED'}
                 </button>
               </div>
 
@@ -1124,33 +1207,92 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
         </section>
 
         {/* Bottom Action Footer */}
-        <div className="pt-4 flex items-center justify-between border-t border-[#E5E3DB]">
+        <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-[#E5E3DB]">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 border border-[#E5E3DB] bg-[#FBFBFA] hover:bg-[#EAE8E0] text-[#6E6E66]"
+            className="px-4 py-2 border border-[#E5E3DB] bg-[#FBFBFA] hover:bg-[#EAE8E0] text-[#6E6E66] transition-colors"
           >
             Cancel & Return
           </button>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setShowReaderPreview(true)}
-              className="px-4 py-2 border border-[#E5E3DB] bg-[#FBFBFA] hover:border-[#141413] text-[#141413] flex items-center space-x-1.5"
+              className="px-4 py-2 border border-[#E5E3DB] bg-[#FBFBFA] hover:border-[#141413] text-[#141413] flex items-center space-x-1.5 transition-colors"
             >
               <Eye className="w-3.5 h-3.5 text-[#9E2A2B]" />
               <span>Reader Preview</span>
             </button>
 
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="px-6 py-2 bg-[#9E2A2B] hover:bg-[#801C1D] text-[#FBFBFA] flex items-center space-x-2 font-medium transition-colors disabled:opacity-50"
-            >
-              <Check className="w-4 h-4" />
-              <span>{isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Publish Entry'}</span>
-            </button>
+            {!isEditing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(undefined, 'draft')}
+                  disabled={isSaving}
+                  className="px-4 py-2 border border-[#D5D3CB] bg-[#FBFBFA] hover:border-[#141413] text-[#141413] font-medium transition-colors disabled:opacity-50"
+                  title="Save as Draft (Assigns accession number, excluded from public archive)"
+                >
+                  {isSaving ? 'Saving...' : 'Save as Draft'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(undefined, 'published')}
+                  disabled={isSaving}
+                  className="px-6 py-2 bg-[#9E2A2B] hover:bg-[#801C1D] text-[#FBFBFA] flex items-center space-x-2 font-medium transition-colors disabled:opacity-50"
+                  title="Publish Entry (Assigns accession number and publishes publicly)"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{isSaving ? 'Publishing...' : 'Publish Entry'}</span>
+                </button>
+              </>
+            ) : visibility === 'draft' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(undefined, 'draft')}
+                  disabled={isSaving}
+                  className="px-4 py-2 border border-[#D5D3CB] bg-[#FBFBFA] hover:border-[#141413] text-[#141413] font-medium transition-colors disabled:opacity-50"
+                  title="Save changes and keep in Draft state"
+                >
+                  {isSaving ? 'Saving...' : 'Save Draft'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(undefined, 'published')}
+                  disabled={isSaving}
+                  className="px-6 py-2 bg-[#9E2A2B] hover:bg-[#801C1D] text-[#FBFBFA] flex items-center space-x-2 font-medium transition-colors disabled:opacity-50"
+                  title="Publish Draft to Public Archive"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{isSaving ? 'Publishing...' : 'Publish Entry'}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(undefined, 'draft')}
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-[#FAF0E6] border border-[#FDE68A] hover:border-[#B45309] text-[#B45309] transition-colors disabled:opacity-50"
+                  title="Revert published entry back to Draft (unlisted from public archive)"
+                >
+                  {isSaving ? 'Updating...' : 'Move to Draft'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(undefined, 'published')}
+                  disabled={isSaving}
+                  className="px-6 py-2 bg-[#9E2A2B] hover:bg-[#801C1D] text-[#FBFBFA] flex items-center space-x-2 font-medium transition-colors disabled:opacity-50"
+                  title="Save changes to published entry"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </form>

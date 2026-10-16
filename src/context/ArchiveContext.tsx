@@ -245,19 +245,19 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const getEntriesByStudy = (studyId: string) => {
     return entries
-      .filter((e) => e.studyId === studyId && e.visibility !== 'hidden')
+      .filter((e) => e.studyId === studyId && e.visibility === 'published')
       .sort((a, b) => new Date(b.createdDate.replace(/\./g, '-')).getTime() - new Date(a.createdDate.replace(/\./g, '-')).getTime());
   };
 
   const getEntriesByCollection = (collectionId: string) => {
     return entries
-      .filter((e) => e.collectionId === collectionId && e.visibility !== 'hidden')
+      .filter((e) => e.collectionId === collectionId && e.visibility === 'published')
       .sort((a, b) => new Date(b.createdDate.replace(/\./g, '-')).getTime() - new Date(a.createdDate.replace(/\./g, '-')).getTime());
   };
 
   const getEntriesByThread = (threadId: string) => {
     return entries
-      .filter((e) => e.threadIds.includes(threadId) && e.visibility !== 'hidden')
+      .filter((e) => e.threadIds.includes(threadId) && e.visibility === 'published')
       .sort((a, b) => new Date(b.createdDate.replace(/\./g, '-')).getTime() - new Date(a.createdDate.replace(/\./g, '-')).getTime());
   };
 
@@ -268,12 +268,12 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const getRelatedEntriesForEntry = (entry: Entry) => {
     if (!entry.relatedEntryIds || entry.relatedEntryIds.length === 0) return [];
-    return entries.filter((e) => entry.relatedEntryIds?.includes(e.id));
+    return entries.filter((e) => entry.relatedEntryIds?.includes(e.id) && e.visibility === 'published');
   };
 
   const getRelatedEntriesForWork = (work: CuratedWork) => {
     if (!work.relatedEntryIds || work.relatedEntryIds.length === 0) return [];
-    return entries.filter((e) => work.relatedEntryIds?.includes(e.id));
+    return entries.filter((e) => work.relatedEntryIds?.includes(e.id) && e.visibility === 'published');
   };
 
   const getRelatedStudiesForWork = (work: CuratedWork) => {

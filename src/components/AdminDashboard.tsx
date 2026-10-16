@@ -122,14 +122,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMedium, setFilterMedium] = useState('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'published' | 'draft' | 'featured'>('all');
+  const [adminSortField, setAdminSortField] = useState<'accession' | 'date' | 'title'>('accession');
+  const [adminSortDir, setAdminSortDir] = useState<'desc' | 'asc'>('desc');
 
   // Homepage Curation subsets derived from unified entries
   const featuredEntries = useMemo(() => {
-    return entries.filter((e) => Boolean(e.featuredOnHome));
+    return entries.filter((e) => Boolean(e.featuredOnHome) && e.visibility === 'published');
   }, [entries]);
 
   const unfeaturedEntries = useMemo(() => {
-    return entries.filter((e) => !e.featuredOnHome);
+    // Drafts are strictly ineligible for Homepage curation
+    return entries.filter((e) => !e.featuredOnHome && e.visibility === 'published');
   }, [entries]);
 
   const allEntryMediums = useMemo(() => {
@@ -137,7 +140,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   }, [entries]);
 
   const filteredEntries = useMemo(() => {
-    return entries.filter((entry) => {
+    const list = entries.filter((entry) => {
       if (filterStatus === 'published' && entry.visibility !== 'published') return false;
       if (filterStatus === 'draft' && entry.visibility !== 'draft') return false;
       if (filterStatus === 'featured' && !entry.featuredOnHome) return false;
@@ -153,7 +156,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       }
       return true;
     });
-  }, [entries, filterStatus, filterMedium, searchTerm]);
+
+    return [...list].sort((a, b) => {
+      if (adminSortField === 'accession') {
+        const numA = parseInt(a.entryNumber, 10);
+        const numB = parseInt(b.entryNumber, 10);
+        if (!isNaN(numA) && !isNaN(numB)) {
+          return adminSortDir === 'desc' ? numB - numA : numA - numB;
+        }
+        return adminSortDir === 'desc'
+          ? (b.entryNumber || '').localeCompare(a.entryNumber || '')
+          : (a.entryNumber || '').localeCompare(b.entryNumber || '');
+      }
+      if (adminSortField === 'date') {
+        const dateA = new Date(a.createdDate.replace(/\./g, '-')).getTime() || 0;
+        const dateB = new Date(b.createdDate.replace(/\./g, '-')).getTime() || 0;
+        return adminSortDir === 'desc' ? dateB - dateA : dateA - dateB;
+      }
+      if (adminSortField === 'title') {
+        return adminSortDir === 'desc'
+          ? b.title.localeCompare(a.title)
+          : a.title.localeCompare(b.title);
+      }
+      return 0;
+    });
+  }, [entries, filterStatus, filterMedium, searchTerm, adminSortField, adminSortDir]);
 
   // New Collection Form State
   const [newColTitle, setNewColTitle] = useState('');
@@ -682,12 +709,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                 </select>
               </div>
 
-              {(searchTerm || filterMedium !== 'all' || filterStatus !== 'all') && (
+              <div className="flex items-center space-x-2">
+                <span className="text-[#8C8C82] text-[10px] uppercase">Sort Queue:</span>
+                <select
+                  value={`${adminSortField}-${adminSortDir}`}
+                  onChange={(e) => {
+                    const [f, d] = e.target.value.split('-') as ['accession' | 'date' | 'title', 'desc' | 'asc'];
+                    setAdminSortField(f);
+                    setAdminSortDir(d);
+                  }}
+                  className="px-2 py-1.5 bg-white border border-[#E5E3DB] text-[#141413] outline-hidden cursor-pointer"
+                >
+                  <option value="accession-desc">Accession # (Newest First)</option>
+                  <option value="accession-asc">Accession # (Oldest First)</option>
+                  <option value="date-desc">Archival Date (Newest First)</option>
+                  <option value="date-asc">Archival Date (Oldest First)</option>
+                  <option value="title-asc">Title (A — Z)</option>
+                  <option value="title-desc">Title (Z — A)</option>
+                </select>
+              </div>
+
+              {(searchTerm || filterMedium !== 'all' || filterStatus !== 'all' || adminSortField !== 'accession' || adminSortDir !== 'desc') && (
                 <button
                   onClick={() => {
                     setSearchTerm('');
                     setFilterMedium('all');
                     setFilterStatus('all');
+                    setAdminSortField('accession');
+                    setAdminSortDir('desc');
                   }}
                   className="text-[11px] text-[#9E2A2B] hover:underline"
                 >
@@ -723,11 +772,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                           </span>
                         )}
                         <span
-                          className={`px-1.5 py-0.2 text-[10px] ${
-                            entry.visibility === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          className={`px-1.5 py-0.2 text-[10px] font-medium tracking-wide uppercase ${
+                            entry.visibility === 'published'
+                              ? 'bg-[#EAE8E0] text-[#141413] border border-[#D5D3CB]'
+                              : 'bg-[#FAF0E6] text-[#B45309] border border-[#FDE68A]'
                           }`}
                         >
-                          {entry.visibility.toUpperCase()}
+                          {entry.visibility === 'published' ? 'PUBLISHED' : 'DRAFT'}
                         </span>
                         {entry.featuredOnHome && (
                           <span className="px-1.5 py-0.2 bg-[#141413] text-[#FBFBFA] text-[10px] font-medium flex items-center space-x-1">
@@ -755,13 +806,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                         <Eye className="w-3 h-3 text-[#9E2A2B]" />
                         <span>Preview</span>
                       </button>
-                      <button
-                        onClick={() => onNavigate({ page: 'entry', slug: entry.slug })}
-                        className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1 transition-colors"
-                        title="Open Public Entry Page"
-                      >
-                        <span>View</span>
-                      </button>
+                      {entry.visibility === 'published' ? (
+                        <button
+                          onClick={() => onNavigate({ page: 'entry', slug: entry.slug })}
+                          className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#141413] flex items-center space-x-1 transition-colors"
+                          title="Open Public Entry Page"
+                        >
+                          <span>View</span>
+                        </button>
+                      ) : (
+                        <span
+                          className="px-2.5 py-1 bg-[#F4F3EE] border border-[#E5E3DB] text-[#A8A8A0] text-xs cursor-not-allowed"
+                          title="Drafts are not accessible on public URLs"
+                        >
+                          Draft (Unlisted)
+                        </span>
+                      )}
                       <button
                         onClick={() => {
                           setEditingEntry(entry);
@@ -776,6 +836,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                       </button>
                       <button
                         onClick={async () => {
+                          if (entry.visibility === 'draft' && !entry.featuredOnHome) {
+                            setErrorMessage('Draft entries cannot be featured on the Homepage. Please publish the entry first.');
+                            setTimeout(() => setErrorMessage(null), 3500);
+                            return;
+                          }
                           try {
                             await updateEntry(entry.id, { featuredOnHome: !entry.featuredOnHome });
                             setSuccessMessage(`Entry "${entry.title}" ${!entry.featuredOnHome ? 'featured on' : 'removed from'} home.`);
@@ -785,30 +850,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                             setErrorMessage(`Failed to update homepage featuring: ${msg}`);
                           }
                         }}
+                        disabled={entry.visibility === 'draft' && !entry.featuredOnHome}
                         className={`px-2.5 py-1 border transition-colors ${
                           entry.featuredOnHome
                             ? 'bg-[#EAE8E0] text-[#141413] border-[#141413] font-medium'
+                            : entry.visibility === 'draft'
+                            ? 'bg-[#FBFBFA] text-[#A8A8A0] border-[#E5E3DB] cursor-not-allowed opacity-60'
                             : 'bg-[#FBFBFA] text-[#6E6E66] border-[#E5E3DB] hover:border-[#141413]'
                         }`}
-                        title="Toggle Homepage Featuring"
+                        title={entry.visibility === 'draft' ? 'Drafts cannot be featured on Homepage' : 'Toggle Homepage Featuring'}
                       >
                         {entry.featuredOnHome ? 'Featured (Home)' : 'Feature on Home'}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          const newVis = entry.visibility === 'published' ? 'draft' : 'published';
-                          try {
-                            await updateEntry(entry.id, { visibility: newVis });
-                            setSuccessMessage(`Entry visibility updated to ${newVis}.`);
-                            setTimeout(() => setSuccessMessage(null), 3000);
-                          } catch (err: unknown) {
-                            const msg = err instanceof Error ? err.message : 'Error updating entry';
-                            setErrorMessage(`Failed to update entry visibility: ${msg}`);
-                          }
-                        }}
-                        className="px-2.5 py-1 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] text-[#6E6E66]"
-                      >
-                        {entry.visibility === 'published' ? 'Unpublish' : 'Publish'}
                       </button>
                       <button
                         onClick={async () => {
@@ -848,10 +900,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
             onSave={async (entryData, existingId) => {
               if (existingId) {
                 await updateEntry(existingId, entryData);
-                setSuccessMessage(`Entry "${entryData.title}" updated successfully in D1!`);
+                setSuccessMessage(
+                  entryData.visibility === 'draft'
+                    ? `Draft "${entryData.title}" saved successfully.`
+                    : `Entry "${entryData.title}" updated and published successfully.`
+                );
               } else {
-                await addEntry(entryData);
-                setSuccessMessage(`Entry "${entryData.title}" created successfully in D1!`);
+                const created = await addEntry(entryData);
+                setSuccessMessage(
+                  entryData.visibility === 'draft'
+                    ? `Draft "${entryData.title}" saved as Accession #${created.entryNumber}!`
+                    : `Entry "${entryData.title}" published with Accession #${created.entryNumber}!`
+                );
               }
               setTimeout(() => setSuccessMessage(null), 4000);
               setEditingEntry(null);

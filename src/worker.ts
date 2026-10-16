@@ -615,6 +615,7 @@ export default {
 
       // 1. GET /api/archive (Aggregate for initial hydration)
       if (pathname === '/api/archive' && method === 'GET') {
+        const auth = await authenticateAdminRequest(request, env);
         const [
           collectionsResult,
           studiesResult,
@@ -630,7 +631,7 @@ export default {
           env.DB.prepare('SELECT * FROM collections ORDER BY order_index ASC, created_at ASC').all<CollectionRecord>(),
           env.DB.prepare('SELECT * FROM studies ORDER BY order_index ASC, created_at ASC').all<StudyRecord>(),
           env.DB.prepare('SELECT * FROM threads ORDER BY order_index ASC, created_at ASC').all<ThreadRecord>(),
-          env.DB.prepare('SELECT * FROM entries ORDER BY order_index ASC, archival_date DESC').all<EntryRecord>(),
+          env.DB.prepare('SELECT * FROM entries ORDER BY CAST(entry_number AS INTEGER) DESC, created_at DESC').all<EntryRecord>(),
           env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
           env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
           env.DB.prepare('SELECT entry_id, related_entry_id FROM entry_related_entries').all<EntryRelatedEntryRecord>(),
@@ -665,7 +666,12 @@ export default {
           entryRelatedEntriesMap.set(ere.entry_id, list);
         }
 
-        const hydratedEntries = (entriesResult.results || []).map((e) =>
+        let rawEntries = entriesResult.results || [];
+        if (!auth.authenticated) {
+          rawEntries = rawEntries.filter((e) => e.visibility === 'published');
+        }
+
+        const hydratedEntries = rawEntries.map((e) =>
           hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap)
         );
 
@@ -829,7 +835,7 @@ export default {
 
           const [entriesResult, studiesResult, entryThreadsResult, entryRelatedStudiesResult, entryRelatedEntriesResult] =
             await Promise.all([
-              env.DB.prepare('SELECT * FROM entries ORDER BY order_index ASC, archival_date DESC').all<EntryRecord>(),
+              env.DB.prepare('SELECT * FROM entries ORDER BY CAST(entry_number AS INTEGER) DESC, created_at DESC').all<EntryRecord>(),
               env.DB.prepare('SELECT id, collection_id FROM studies').all<{ id: string; collection_id: string }>(),
               env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
               env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
@@ -862,9 +868,16 @@ export default {
             entryRelatedEntriesMap.set(ere.entry_id, list);
           }
 
+          const auth = await authenticateAdminRequest(request, env);
           let list = (entriesResult.results || []).map((e) =>
             hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap)
           );
+
+          if (!auth.authenticated) {
+            list = list.filter((e) => e.visibility === 'published');
+          } else if (visibilityFilter) {
+            list = list.filter((e) => e.visibility === visibilityFilter);
+          }
 
           if (studyFilter) {
             list = list.filter((e) => e.studyId === studyFilter);
@@ -874,9 +887,6 @@ export default {
           }
           if (threadFilter) {
             list = list.filter((e) => e.threadIds.includes(threadFilter));
-          }
-          if (visibilityFilter) {
-            list = list.filter((e) => e.visibility === visibilityFilter);
           }
           if (featuredParam !== null) {
             const isFeatured = featuredParam === 'true' || featuredParam === '1';
@@ -900,6 +910,13 @@ export default {
 
           if (!entry) {
             return errorResponse('Entry not found', 404);
+          }
+
+          if (entry.visibility !== 'published') {
+            const auth = await authenticateAdminRequest(request, env);
+            if (!auth.authenticated) {
+              return errorResponse('Entry not found', 404);
+            }
           }
 
           const [study, entryThreads, entryRelatedStudies, entryRelatedEntries] = await Promise.all([

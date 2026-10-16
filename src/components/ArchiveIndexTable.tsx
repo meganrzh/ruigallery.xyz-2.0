@@ -52,9 +52,14 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
           return sortDirection === 'desc' ? timeB - timeA : timeA - timeB;
         }
         if (sortField === 'entryNumber') {
-          const numA = parseInt(a.entryNumber, 10) || 0;
-          const numB = parseInt(b.entryNumber, 10) || 0;
-          return sortDirection === 'desc' ? numB - numA : numA - numB;
+          const numA = parseInt(a.entryNumber, 10);
+          const numB = parseInt(b.entryNumber, 10);
+          if (!isNaN(numA) && !isNaN(numB)) {
+            return sortDirection === 'desc' ? numB - numA : numA - numB;
+          }
+          return sortDirection === 'desc'
+            ? (b.entryNumber || '').localeCompare(a.entryNumber || '')
+            : (a.entryNumber || '').localeCompare(b.entryNumber || '');
         }
         if (sortField === 'title') {
           return sortDirection === 'desc'
