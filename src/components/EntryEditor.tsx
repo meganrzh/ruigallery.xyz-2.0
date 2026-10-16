@@ -67,9 +67,7 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
   const [title, setTitle] = useState(initialEntry?.title || '');
   const [subtitle, setSubtitle] = useState(initialEntry?.subtitle || '');
   const [slug, setSlug] = useState(initialEntry?.slug || '');
-  const [entryNumber, setEntryNumber] = useState(
-    initialEntry?.entryNumber || String(entries.length + 1).padStart(3, '0')
-  );
+  const [entryNumber] = useState(initialEntry?.entryNumber || '');
   const [ruiRevision, setRuiRevision] = useState<RuiRevision | ''>(initialEntry?.ruiRevision || '');
 
   // Medium
@@ -139,10 +137,10 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
   const handleTitleChange = (val: string) => {
     setTitle(val);
     if (!isEditing && (!slug || slug.startsWith('entry-'))) {
-      const generated = `entry-${entryNumber}-${val
+      const generated = val
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '')}`;
+        .replace(/(^-|-$)/g, '');
       setSlug(generated);
     }
   };
@@ -191,9 +189,13 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
       finalMedium = mediumChoice.trim() || undefined;
     }
 
+    const fallbackSlug =
+      title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
+      `entry-${Date.now()}`;
+
     const payload: Omit<Entry, 'id'> = {
-      slug: slug.trim() || `entry-${entryNumber}`,
-      entryNumber: entryNumber.trim() || '000',
+      slug: slug.trim() || fallbackSlug,
+      entryNumber: isEditing ? entryNumber : '',
       collectionId: collectionId.trim() ? collectionId.trim() : null,
       studyId: studyId.trim() ? studyId.trim() : null,
       title: title.trim(),
@@ -323,19 +325,22 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
               />
             </div>
 
-            {/* Entry Number */}
+            {/* Accession Number */}
             <div className="md:col-span-2">
               <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                Catalog # *
+                Accession # {isEditing ? '(Immutable)' : ''}
               </label>
-              <input
-                type="text"
-                value={entryNumber}
-                onChange={(e) => setEntryNumber(e.target.value)}
-                placeholder="019"
-                className="w-full p-2.5 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
-                required
-              />
+              {isEditing ? (
+                <div className="w-full p-2.5 bg-[#EFECE6] border border-[#E5E3DB] text-[#141413] font-mono-archival text-sm flex items-center justify-between">
+                  <span>ENTRY {entryNumber}</span>
+                  <span className="text-[10px] text-[#8C8C82] uppercase tracking-wider">Permanent Archive ID</span>
+                </div>
+              ) : (
+                <div className="w-full p-2.5 bg-[#EFECE6] border border-dashed border-[#D5D3CB] text-[#8C8C82] font-mono-archival text-xs flex items-center space-x-2 select-none">
+                  <span className="inline-block w-2 h-2 rounded-full bg-[#8C8C82]/40" />
+                  <span>Accession # — assigned on save</span>
+                </div>
+              )}
             </div>
 
             {/* Visibility */}

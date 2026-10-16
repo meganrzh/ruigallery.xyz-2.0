@@ -533,10 +533,9 @@ export async function handleAdminMutationRoutes(
     }
 
     const id = body.id || `entry-${Date.now()}`;
-    const entryNumber = body.entryNumber || '001';
     const slug =
-      body.slug ||
-      `entry-${entryNumber}-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}` ||
+      body.slug?.trim() ||
+      title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
       id;
     const ruiRevision = body.ruiRevision !== undefined ? body.ruiRevision : 'REV 00';
     const medium = body.medium?.trim() || null;
@@ -561,17 +560,33 @@ export async function handleAdminMutationRoutes(
 
     const batchStatements: D1PreparedStatement[] = [
       env.DB.prepare(
+        `INSERT OR IGNORE INTO accession_sequences (name, last_number)
+         VALUES ('entry_number', COALESCE((SELECT MAX(CAST(entry_number AS INTEGER)) FROM entries), 0))`
+      ),
+      env.DB.prepare(
+        `UPDATE accession_sequences
+         SET last_number = last_number + 1
+         WHERE name = 'entry_number'`
+      ),
+      env.DB.prepare(
         `INSERT INTO entries (
           id, slug, entry_number, collection_id, study_id, title, subtitle, rui_revision,
           medium, summary, excerpt, location, archival_date, display_date,
           published_date, last_modified_date, featured_on_home, home_layout_weight,
           cover_image, cover_image_caption, cover_image_alt, blocks, metadata,
           visibility, order_index, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        SELECT
+          ?, ?, printf('%03d', last_number), ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?
+        FROM accession_sequences
+        WHERE name = 'entry_number'`
       ).bind(
         id,
         slug,
-        entryNumber,
         collectionId,
         studyId,
         title,
@@ -735,7 +750,7 @@ export async function handleAdminMutationRoutes(
 
       const now = new Date().toISOString();
       const slug = body.slug !== undefined ? body.slug.trim() : existingEntry.slug;
-      const entryNumber = body.entryNumber !== undefined ? body.entryNumber.trim() : existingEntry.entry_number;
+      // Note: entry_number is permanently immutable and cannot be altered by PUT requests.
       const ruiRevision = body.ruiRevision !== undefined ? body.ruiRevision : existingEntry.rui_revision;
       const medium = normalizeNullableText(body.medium, existingEntry.medium, true);
       const subtitle = normalizeNullableText(body.subtitle, existingEntry.subtitle, true);
@@ -763,7 +778,7 @@ export async function handleAdminMutationRoutes(
       const batchStatements: D1PreparedStatement[] = [
         env.DB.prepare(
           `UPDATE entries SET
-            slug = ?, entry_number = ?, collection_id = ?, study_id = ?, title = ?, subtitle = ?,
+            slug = ?, collection_id = ?, study_id = ?, title = ?, subtitle = ?,
             rui_revision = ?, medium = ?, summary = ?, excerpt = ?, location = ?,
             archival_date = ?, display_date = ?, published_date = ?, last_modified_date = ?,
             featured_on_home = ?, home_layout_weight = ?, cover_image = ?, cover_image_caption = ?,
@@ -772,7 +787,6 @@ export async function handleAdminMutationRoutes(
            WHERE id = ?`
         ).bind(
           slug,
-          entryNumber,
           collectionId,
           studyId,
           title,
