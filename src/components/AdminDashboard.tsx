@@ -61,6 +61,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     reorderCollections,
     addStudy,
     updateStudy,
+    deleteStudy,
     addThread,
     deleteThread,
     resetToDefaultData,
@@ -333,6 +334,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       alert(`Failed to save study: ${err?.message || 'Error'}`);
     } finally {
       setIsSavingStudy(false);
+    }
+  };
+
+  // Study Deletion Confirmation State & Handler
+  const [studyPendingDelete, setStudyPendingDelete] = useState<{
+    study: Study;
+    collectionTitle: string;
+    entryCount: number;
+  } | null>(null);
+  const [isDeletingStudy, setIsDeletingStudy] = useState(false);
+
+  const handleConfirmDeleteStudy = async () => {
+    if (!studyPendingDelete) return;
+    setIsDeletingStudy(true);
+    try {
+      await deleteStudy(studyPendingDelete.study.id);
+      setSuccessMessage(
+        `Study "${studyPendingDelete.study.title}" deleted. Associated entries remain in ${studyPendingDelete.collectionTitle}.`
+      );
+      setTimeout(() => setSuccessMessage(null), 4000);
+      setStudyPendingDelete(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error deleting study';
+      setErrorMessage(`Failed to delete study: ${msg}`);
+      setTimeout(() => setErrorMessage(null), 4000);
+    } finally {
+      setIsDeletingStudy(false);
     }
   };
 
@@ -1525,6 +1553,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                                     >
                                       Edit
                                     </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setStudyPendingDelete({
+                                          study,
+                                          collectionTitle: collection.title,
+                                          entryCount: studyEntries.length,
+                                        })
+                                      }
+                                      className="px-2.5 py-1 border border-[#E5E3DB] bg-white hover:border-red-400 hover:text-red-700 text-[#8C8C82] transition-colors"
+                                      title="Delete Study (Preserves associated entries in collection)"
+                                    >
+                                      Delete
+                                    </button>
                                   </div>
                                 </div>
                               );
@@ -1535,6 +1577,92 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Study Confirmation Modal */}
+        {studyPendingDelete && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="relative w-full max-w-lg bg-[#FBFBFA] border border-[#E5E3DB] shadow-2xl text-[#141413] animate-fade-in font-mono-archival text-xs">
+              {/* Modal Header */}
+              <div className="bg-[#141413] text-[#FBFBFA] px-6 py-3.5 flex items-center justify-between border-b border-[#333330]">
+                <div className="flex items-center space-x-2">
+                  <span className="text-[#9E2A2B] font-bold">[ STUDY DELETION ]</span>
+                  <span className="text-[#8C8C82]">•</span>
+                  <span className="font-semibold uppercase tracking-wider">Confirm Removal</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !isDeletingStudy && setStudyPendingDelete(null)}
+                  className="p-1 hover:bg-[#2C2C28] text-[#8C8C82] hover:text-[#FBFBFA] transition-colors"
+                  title="Cancel"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div>
+                  <span className="text-[10px] text-[#8C8C82] uppercase tracking-wider block mb-1">
+                    Target Study
+                  </span>
+                  <h3 className="font-serif text-xl font-medium text-[#141413]">
+                    {studyPendingDelete.study.title}
+                  </h3>
+                  {studyPendingDelete.study.subtitle && (
+                    <p className="font-serif text-xs text-[#6E6E66] italic mt-0.5">
+                      {studyPendingDelete.study.subtitle}
+                    </p>
+                  )}
+                </div>
+
+                {/* Metadata Details */}
+                <div className="p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-[#8C8C82]">Parent Collection:</span>
+                    <span className="font-medium text-[#141413]">{studyPendingDelete.collectionTitle}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#8C8C82]">Associated Entries:</span>
+                    <span className="font-semibold text-[#141413]">
+                      {studyPendingDelete.entryCount} {studyPendingDelete.entryCount === 1 ? 'entry' : 'entries'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Required Confirmation Notice */}
+                <div className="p-3.5 bg-amber-50/70 border border-amber-200 text-[#78350F] space-y-2">
+                  <p className="font-medium leading-relaxed">
+                    Deleting this Study will remove the Study classification but will not delete its Entries.
+                    Associated Entries will remain in <span className="font-bold underline">{studyPendingDelete.collectionTitle}</span>.
+                  </p>
+                  <p className="text-[11px] text-[#92400E] leading-normal">
+                    Entry accession numbers, content, draft/published status, threads, and homepage curation remain strictly preserved.
+                  </p>
+                </div>
+
+                {/* Action Controls */}
+                <div className="pt-2 flex items-center justify-end space-x-3">
+                  <button
+                    type="button"
+                    disabled={isDeletingStudy}
+                    onClick={() => setStudyPendingDelete(null)}
+                    className="px-4 py-2 border border-[#E5E3DB] bg-[#FBFBFA] hover:bg-[#EAE8E0] text-[#6E6E66] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDeletingStudy}
+                    onClick={handleConfirmDeleteStudy}
+                    className="px-5 py-2 bg-red-800 hover:bg-red-900 text-white font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isDeletingStudy ? 'Deleting Study...' : 'Confirm Delete Study'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

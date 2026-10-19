@@ -64,7 +64,7 @@ interface ArchiveContextType {
 
   addStudy: (std: Omit<Study, 'id'>) => Promise<Study>;
   updateStudy: (id: string, updates: Partial<Study>) => Promise<void>;
-  deleteStudy: (id: string) => void;
+  deleteStudy: (id: string) => Promise<void>;
 
   addThread: (thread: Omit<Thread, 'id'>) => Promise<Thread>;
   deleteThread: (id: string) => Promise<void>;
@@ -548,8 +548,47 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  const deleteStudy = (id: string) => {
-    setStudies((prev) => prev.filter((s) => s.id !== id));
+  const deleteStudy = async (id: string): Promise<void> => {
+    try {
+      await api.deleteStudy(id);
+      setStudies((prev) => prev.filter((s) => s.id !== id));
+      setEntries((prev) =>
+        prev.map((entry) => {
+          let updated = entry;
+          if (entry.studyId === id) {
+            updated = { ...updated, studyId: undefined };
+          }
+          if (updated.relatedStudyIds && updated.relatedStudyIds.includes(id)) {
+            updated = {
+              ...updated,
+              relatedStudyIds: updated.relatedStudyIds.filter((sId) => sId !== id),
+            };
+          }
+          return updated;
+        })
+      );
+      setCuratedWorks((prev) =>
+        prev.map((work) => {
+          if (work.relatedStudyIds && work.relatedStudyIds.includes(id)) {
+            return {
+              ...work,
+              relatedStudyIds: work.relatedStudyIds.filter((sId) => sId !== id),
+            };
+          }
+          return work;
+        })
+      );
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for deleteStudy:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
+      setStudies((prev) => prev.filter((s) => s.id !== id));
+      setEntries((prev) =>
+        prev.map((entry) => (entry.studyId === id ? { ...entry, studyId: undefined } : entry))
+      );
+    }
   };
 
   const addThread = async (threadData: Omit<Thread, 'id'>): Promise<Thread> => {

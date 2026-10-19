@@ -302,29 +302,48 @@ export async function handleAdminMutationRoutes(
     }
 
     if (method === 'DELETE') {
-      const countCheck = await env.DB.prepare(
-        'SELECT COUNT(*) as count FROM entries WHERE study_id = ?'
-      ).bind(id).first<{ count: number }>();
+      const study = await env.DB.prepare(
+        'SELECT id, collection_id, title FROM studies WHERE id = ?'
+      ).bind(id).first<{ id: string; collection_id: string; title: string }>();
 
-      if (countCheck && countCheck.count > 0) {
-        return errorResponse(
-          `Cannot delete study: ${countCheck.count} entry/entries are assigned to this study. Reassign or delete them first.`,
-          409
-        );
-      }
-
-      const result = await env.DB.prepare(
-        'DELETE FROM studies WHERE id = ?'
-      ).bind(id).run();
-
-      if (result.meta?.changes === 0) {
+      if (!study) {
         return errorResponse('Study not found', 404);
       }
 
+      const countCheck = await env.DB.prepare(
+        'SELECT COUNT(*) as count FROM entries WHERE study_id = ?'
+      ).bind(id).first<{ count: number }>();
+      const associatedCount = countCheck?.count || 0;
+
+      const now = new Date().toISOString();
+
+      // Atomically:
+      // 1. Preserve every associated Entry: set study_id = NULL, ensuring collection_id is preserved
+      // 2. Remove junction table records from entry_related_studies
+      // 3. Remove junction table records from curated_work_related_studies
+      // 4. Delete the study record itself
+      await env.DB.batch([
+        env.DB.prepare(
+          `UPDATE entries
+           SET collection_id = COALESCE(collection_id, ?),
+               study_id = NULL,
+               updated_at = ?
+           WHERE study_id = ?`
+        ).bind(study.collection_id, now, id),
+        env.DB.prepare('DELETE FROM entry_related_studies WHERE study_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM curated_work_related_studies WHERE study_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM studies WHERE id = ?').bind(id),
+      ]);
+
       return jsonResponse({
         success: true,
-        message: 'Study deleted successfully',
-        id,
+        message: `Study "${study.title}" deleted successfully. ${associatedCount} entry/entries preserved in parent collection.`,
+        data: {
+          id,
+          title: study.title,
+          collectionId: study.collection_id,
+          preservedEntriesCount: associatedCount,
+        },
       });
     }
 
