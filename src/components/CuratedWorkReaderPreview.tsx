@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Calendar, Layers, Eye } from 'lucide-react';
 import { CuratedWork, Entry, Study } from '../types';
+import { formatFullDate, formatYear } from '../utils/dateFormatting';
 
 interface CuratedWorkReaderPreviewProps {
   work: CuratedWork;
@@ -43,7 +44,7 @@ export const CuratedWorkReaderPreview: React.FC<CuratedWorkReaderPreviewProps> =
               <div className="flex items-center space-x-3">
                 <span className="text-[#9E2A2B] font-medium uppercase tracking-wider">{work.workType}</span>
                 <span>•</span>
-                <span>{work.year || '2026'}</span>
+                <span>{work.year || formatYear(work.archivalDate)}</span>
               </div>
               <span>CATALOG ID: {work.id.toUpperCase()}</span>
             </div>
@@ -63,7 +64,7 @@ export const CuratedWorkReaderPreview: React.FC<CuratedWorkReaderPreviewProps> =
               {work.date && (
                 <div>
                   <span className="block text-[#8C8C82] text-[10px] uppercase">Date</span>
-                  <span className="text-[#141413]">{work.date}</span>
+                  <span className="text-[#141413]">{formatFullDate(work.date)}</span>
                 </div>
               )}
               {work.metadata?.medium && (

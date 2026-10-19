@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowLeft, Compass, Tag, Calendar, Layers } from 'lucide-react';
 import { AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { formatFullDate } from '../utils/dateFormatting';
 
 interface StudyDetailProps {
   slug: string;
@@ -67,7 +68,7 @@ export const StudyDetail: React.FC<StudyDetailProps> = ({ slug, onNavigate }) =>
                 </>
               )}
             </div>
-            <span>INITIATED: {study.createdDate}</span>
+            <span>INITIATED: {formatFullDate(study.createdDate)}</span>
           </div>
 
           <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl text-[#141413] font-medium leading-tight">
@@ -129,7 +130,7 @@ export const StudyDetail: React.FC<StudyDetailProps> = ({ slug, onNavigate }) =>
               >
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono-archival text-[#8C8C82]">
                   <div className="flex items-center space-x-2">
-                    <span className="font-semibold text-[#141413]">{entry.createdDate}</span>
+                    <span className="font-semibold text-[#141413]">{formatFullDate(entry.createdDate)}</span>
                     <span>•</span>
                     <span className="text-[#141413]">ENTRY {entry.entryNumber}</span>
                     <span className="px-1.5 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] font-medium text-[10px]">

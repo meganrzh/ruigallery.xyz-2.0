@@ -3,6 +3,7 @@ import { X, Calendar, Layers, Eye, MapPin, Compass, FileText } from 'lucide-reac
 import { Entry, Collection, Study, Thread } from '../types';
 import { EntryBodyRenderer } from './EntryBodyRenderer';
 import { EntryMetadataHeader } from './EntryMetadataHeader';
+import { formatFullDate } from '../utils/dateFormatting';
 
 interface EntryReaderPreviewProps {
   entry: Partial<Entry> & {
@@ -36,8 +37,8 @@ export const EntryReaderPreview: React.FC<EntryReaderPreviewProps> = ({
     subtitle: entry.subtitle,
     ruiRevision: entry.ruiRevision || null,
     medium: entry.medium || 'Research / Inquiry',
-    createdDate: entry.createdDate || new Date().toISOString().slice(0, 10).replace(/-/g, '.'),
-    publishedDate: entry.publishedDate || entry.createdDate || new Date().toISOString().slice(0, 10).replace(/-/g, '.'),
+    createdDate: formatFullDate(entry.createdDate) || new Date().toISOString().slice(0, 10).replace(/-/g, '.'),
+    publishedDate: formatFullDate(entry.publishedDate || entry.createdDate) || new Date().toISOString().slice(0, 10).replace(/-/g, '.'),
     displayDate: entry.displayDate,
     location: entry.location,
     threadIds: entry.threadIds || threads.map((t) => t.id),

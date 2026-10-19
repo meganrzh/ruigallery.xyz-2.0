@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Search, Filter, X, ArrowUpDown, ChevronRight, CornerDownRight, Tag } from 'lucide-react';
 import { AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { formatFullDate, compareDatesDesc, compareDatesAsc } from '../utils/dateFormatting';
 
 interface ArchiveIndexTableProps {
   onNavigate: (view: AppView) => void;
@@ -47,9 +48,9 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
       })
       .sort((a, b) => {
         if (sortField === 'date') {
-          const timeA = new Date(a.createdDate.replace(/\./g, '-')).getTime();
-          const timeB = new Date(b.createdDate.replace(/\./g, '-')).getTime();
-          return sortDirection === 'desc' ? timeB - timeA : timeA - timeB;
+          return sortDirection === 'desc'
+            ? compareDatesDesc(a.createdDate, b.createdDate)
+            : compareDatesAsc(a.createdDate, b.createdDate);
         }
         if (sortField === 'entryNumber') {
           const numA = parseInt(a.entryNumber, 10);
@@ -271,7 +272,7 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
                     >
                       {/* Date */}
                       <td className="py-3.5 px-4 font-medium text-[#141413] whitespace-nowrap">
-                        {entry.createdDate}
+                        {formatFullDate(entry.createdDate)}
                       </td>
 
                       {/* Entry # */}

@@ -18,6 +18,7 @@ import {
   INITIAL_ABOUT_DATA,
 } from '../data/initialData';
 import { api } from '../services/api';
+import { formatFullDate, formatYear, compareDatesDesc } from '../utils/dateFormatting';
 
 interface ArchiveContextType {
   collections: Collection[];
@@ -213,9 +214,9 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         title: entry.title,
         subtitle: entry.subtitle,
         workType: (entry.medium as any) || 'Essay',
-        year: entry.createdDate ? entry.createdDate.slice(0, 4) : '2026',
-        date: entry.displayDate || entry.createdDate,
-        archivalDate: entry.createdDate,
+        year: formatYear(entry.createdDate),
+        date: entry.displayDate || formatFullDate(entry.createdDate),
+        archivalDate: formatFullDate(entry.createdDate),
         featuredOnHome: Boolean(entry.featuredOnHome),
         homeLayoutWeight: entry.homeLayoutWeight || 'standard',
         coverImage: entry.coverImage || '',
@@ -246,19 +247,19 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const getEntriesByStudy = (studyId: string) => {
     return entries
       .filter((e) => e.studyId === studyId && e.visibility === 'published')
-      .sort((a, b) => new Date(b.createdDate.replace(/\./g, '-')).getTime() - new Date(a.createdDate.replace(/\./g, '-')).getTime());
+      .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate));
   };
 
   const getEntriesByCollection = (collectionId: string) => {
     return entries
       .filter((e) => e.collectionId === collectionId && e.visibility === 'published')
-      .sort((a, b) => new Date(b.createdDate.replace(/\./g, '-')).getTime() - new Date(a.createdDate.replace(/\./g, '-')).getTime());
+      .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate));
   };
 
   const getEntriesByThread = (threadId: string) => {
     return entries
       .filter((e) => e.threadIds.includes(threadId) && e.visibility === 'published')
-      .sort((a, b) => new Date(b.createdDate.replace(/\./g, '-')).getTime() - new Date(a.createdDate.replace(/\./g, '-')).getTime());
+      .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate));
   };
 
   const getRelatedStudiesForEntry = (entry: Entry) => {
@@ -283,9 +284,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const getNextPrevEntry = (currentId: string) => {
     const published = entries.filter((e) => e.visibility === 'published');
-    const sorted = [...published].sort(
-      (a, b) => new Date(b.createdDate.replace(/\./g, '-')).getTime() - new Date(a.createdDate.replace(/\./g, '-')).getTime()
-    );
+    const sorted = [...published].sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate));
     const index = sorted.findIndex((e) => e.id === currentId || e.slug === currentId);
     if (index === -1) return {};
     return {
@@ -308,9 +307,9 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
           title: entry.title,
           subtitle: entry.subtitle,
           workType: (entry.medium as any) || 'Essay',
-          year: entry.createdDate ? entry.createdDate.slice(0, 4) : '2026',
-          date: entry.displayDate || entry.createdDate,
-          archivalDate: entry.createdDate,
+          year: formatYear(entry.createdDate),
+          date: entry.displayDate || formatFullDate(entry.createdDate),
+          archivalDate: formatFullDate(entry.createdDate),
           featuredOnHome: true,
           homeLayoutWeight: entry.homeLayoutWeight || 'standard',
           coverImage: entry.coverImage || '',

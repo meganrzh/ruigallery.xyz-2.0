@@ -4,6 +4,7 @@
  */
 
 import { Collection, Study, Thread, Entry, EntryBlock, RuiRevision, CuratedWork, CuratedWorkBlock } from '../types';
+import { formatFullDate } from '../utils/dateFormatting';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -100,7 +101,7 @@ export function mapRecordToStudy(record: RawStudyRecord): Study {
     title: record.title,
     subtitle: record.subtitle || undefined,
     description: record.description || '',
-    createdDate: record.archival_date || record.created_at.split('T')[0].replace(/-/g, '.'),
+    createdDate: formatFullDate(record.archival_date) || record.created_at.split('T')[0].replace(/-/g, '.'),
     threadIds: [],
     relatedStudyIds: [],
     order: record.order_index,
@@ -127,7 +128,7 @@ export function mapRawToEntry(raw: RawHydratedEntry): Entry {
     subtitle: raw.subtitle || undefined,
     ruiRevision: raw.ruiRevision !== undefined ? raw.ruiRevision : null,
     medium: raw.medium || undefined,
-    createdDate: raw.createdDate,
+    createdDate: formatFullDate(raw.createdDate) || raw.createdDate,
     displayDate: raw.displayDate || undefined,
     lastModifiedDate: raw.lastModifiedDate || undefined,
     publishedDate: raw.publishedDate || undefined,

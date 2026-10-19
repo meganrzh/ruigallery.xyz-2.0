@@ -33,6 +33,7 @@ import {
 } from '../types';
 import { EntryReaderPreview } from './EntryReaderPreview';
 import { FormattedTextarea } from '../utils/textFormatting';
+import { formatFullDate } from '../utils/dateFormatting';
 
 interface EntryEditorProps {
   initialEntry?: Entry | null;
@@ -89,7 +90,9 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
 
   // Dates & Location
   const [createdDate, setCreatedDate] = useState(
-    initialEntry?.createdDate || new Date().toISOString().slice(0, 10).replace(/-/g, '.')
+    initialEntry?.createdDate
+      ? formatFullDate(initialEntry.createdDate)
+      : new Date().toISOString().slice(0, 10).replace(/-/g, '.')
   );
   const [displayDate, setDisplayDate] = useState(initialEntry?.displayDate || '');
   const [location, setLocation] = useState(initialEntry?.location || '');
@@ -207,8 +210,8 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
       subtitle: subtitle.trim() || undefined,
       ruiRevision: ruiRevision ? (ruiRevision as RuiRevision) : null,
       medium: finalMedium,
-      createdDate: createdDate.trim(),
-      publishedDate: createdDate.trim(),
+      createdDate: formatFullDate(createdDate.trim()) || createdDate.trim(),
+      publishedDate: formatFullDate(createdDate.trim()) || createdDate.trim(),
       displayDate: displayDate.trim() || undefined,
       location: location.trim() || undefined,
       threadIds,
@@ -1315,8 +1318,8 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                 : mediumChoice !== '__none__'
                 ? mediumChoice
                 : 'Research / Inquiry',
-            createdDate,
-            publishedDate: createdDate,
+            createdDate: formatFullDate(createdDate) || createdDate,
+            publishedDate: formatFullDate(createdDate) || createdDate,
             displayDate,
             location,
             threadIds,

@@ -38,6 +38,7 @@ import { useArchive } from '../context/ArchiveContext';
 import { api } from '../services/api';
 import { EntryEditor } from './EntryEditor';
 import { EntryReaderPreview } from './EntryReaderPreview';
+import { formatFullDate, compareDatesDesc, compareDatesAsc } from '../utils/dateFormatting';
 
 interface AdminDashboardProps {
   onNavigate: (view: AppView) => void;
@@ -169,9 +170,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
           : (a.entryNumber || '').localeCompare(b.entryNumber || '');
       }
       if (adminSortField === 'date') {
-        const dateA = new Date(a.createdDate.replace(/\./g, '-')).getTime() || 0;
-        const dateB = new Date(b.createdDate.replace(/\./g, '-')).getTime() || 0;
-        return adminSortDir === 'desc' ? dateB - dateA : dateA - dateB;
+        return adminSortDir === 'desc'
+          ? compareDatesDesc(a.createdDate, b.createdDate)
+          : compareDatesAsc(a.createdDate, b.createdDate);
       }
       if (adminSortField === 'title') {
         return adminSortDir === 'desc'
@@ -758,7 +759,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                   >
                     <div className="space-y-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 text-xs font-mono-archival text-[#8C8C82]">
-                        <span className="text-[#141413] font-semibold">{entry.createdDate}</span>
+                        <span className="text-[#141413] font-semibold">{formatFullDate(entry.createdDate)}</span>
                         <span>•</span>
                         <span className="text-[#9E2A2B] font-semibold">ENTRY {entry.entryNumber}</span>
                         {entry.ruiRevision ? (
@@ -1022,7 +1023,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                             {entry.medium || 'Visual Work'}
                           </span>
                           <span>•</span>
-                          <span>{entry.displayDate || entry.createdDate}</span>
+                          <span>{entry.displayDate || formatFullDate(entry.createdDate)}</span>
                           <span
                             className={`px-1.5 py-0.2 text-[10px] ${
                               entry.visibility === 'published'

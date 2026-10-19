@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Compass, Calendar, MapPin, Clock, Layers } from 
 import { CuratedWork, AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { renderFormattedText } from '../utils/textFormatting';
+import { formatFullDate, formatYear } from '../utils/dateFormatting';
 
 interface CuratedWorkDetailProps {
   slug: string;
@@ -51,7 +52,7 @@ export const CuratedWorkDetail: React.FC<CuratedWorkDetailProps> = ({ slug, onNa
             <div className="flex items-center space-x-3">
               <span className="text-[#9E2A2B] font-medium uppercase tracking-wider">{work.workType}</span>
               <span>•</span>
-              <span>{work.year}</span>
+              <span>{work.year || formatYear(work.archivalDate)}</span>
             </div>
             <span>CATALOG ID: {work.id.toUpperCase()}</span>
           </div>
@@ -71,7 +72,7 @@ export const CuratedWorkDetail: React.FC<CuratedWorkDetailProps> = ({ slug, onNa
             {work.date && (
               <div>
                 <span className="block text-[#8C8C82] text-[10px] uppercase">Date</span>
-                <span className="text-[#141413]">{work.date}</span>
+                <span className="text-[#141413]">{formatFullDate(work.date)}</span>
               </div>
             )}
             {work.metadata?.medium && (

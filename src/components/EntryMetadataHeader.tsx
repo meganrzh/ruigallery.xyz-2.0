@@ -1,6 +1,7 @@
 import React from 'react';
 import { Entry, Collection, Study, Thread, AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { formatFullDate } from '../utils/dateFormatting';
 
 interface EntryMetadataHeaderProps {
   entry: Entry;
@@ -48,9 +49,9 @@ export const EntryMetadataHeader: React.FC<EntryMetadataHeaderProps> = ({
           )}
         </div>
         <div className="flex items-center space-x-2 text-[#8C8C82] text-[11px]">
-          <span>CREATED: {entry.createdDate}</span>
-          {entry.lastModifiedDate && entry.lastModifiedDate !== entry.createdDate && (
-            <span>(MODIFIED: {entry.lastModifiedDate})</span>
+          <span>CREATED: {formatFullDate(entry.createdDate)}</span>
+          {entry.lastModifiedDate && formatFullDate(entry.lastModifiedDate) !== formatFullDate(entry.createdDate) && (
+            <span>(MODIFIED: {formatFullDate(entry.lastModifiedDate)})</span>
           )}
         </div>
       </div>

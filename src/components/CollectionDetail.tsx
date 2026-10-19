@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowLeft, FolderKanban, BookOpen, Calendar, MapPin, Tag } from 'lucide-react';
 import { AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { formatFullDate } from '../utils/dateFormatting';
 
 interface CollectionDetailProps {
   slug: string;
@@ -127,7 +128,7 @@ export const CollectionDetail: React.FC<CollectionDetailProps> = ({ slug, onNavi
                   </div>
 
                   <div className="pt-3 border-t border-[#E5E3DB] flex items-center justify-between text-xs font-mono-archival">
-                    <span className="text-[#8C8C82]">Active since {study.createdDate}</span>
+                    <span className="text-[#8C8C82]">Active since {formatFullDate(study.createdDate)}</span>
                     <span className="text-[#141413] font-medium hover:underline">
                       Enter Study &rarr;
                     </span>
@@ -152,7 +153,7 @@ export const CollectionDetail: React.FC<CollectionDetailProps> = ({ slug, onNavi
                 className="py-4 px-2 hover:bg-[#F4F3EE] cursor-pointer transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2"
               >
                 <div className="flex items-center space-x-3 text-xs font-mono-archival text-[#8C8C82]">
-                  <span className="text-[#141413] font-medium">{entry.createdDate}</span>
+                  <span className="text-[#141413] font-medium">{formatFullDate(entry.createdDate)}</span>
                   <span>ENTRY {entry.entryNumber}</span>
                   <span className="text-[#9E2A2B]">{entry.ruiRevision}</span>
                 </div>

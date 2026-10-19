@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { ArrowUpRight, BookOpen, Compass, ExternalLink } from 'lucide-react';
 import { CuratedWork, AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { formatFullDate, formatYear } from '../utils/dateFormatting';
 
 interface CuratedEditorialGridProps {
   onNavigate: (view: AppView) => void;
@@ -25,9 +26,9 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
           title: entry.title,
           subtitle: entry.subtitle,
           workType: (entry.medium as any) || 'Essay',
-          year: entry.createdDate ? entry.createdDate.slice(0, 4) : '2026',
-          date: entry.displayDate || entry.createdDate,
-          archivalDate: entry.createdDate,
+          year: formatYear(entry.createdDate),
+          date: entry.displayDate || formatFullDate(entry.createdDate),
+          archivalDate: formatFullDate(entry.createdDate),
           featuredOnHome: true,
           homeLayoutWeight: entry.homeLayoutWeight || 'standard',
           coverImage: entry.coverImage || '',

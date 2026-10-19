@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { ArrowRight, ArrowLeft, FolderKanban, Layers, Database, CornerDownRight } from 'lucide-react';
 import { AppView, INITIAL_ENTRY_MEDIUMS } from '../types';
 import { useArchive } from '../context/ArchiveContext';
+import { formatFullDate, compareDatesDesc } from '../utils/dateFormatting';
 
 interface LaboratoryViewProps {
   onNavigate: (view: AppView) => void;
@@ -79,11 +80,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
         };
         const sampleEntries = allPublishedEntries
           .filter((e) => e.medium === name)
-          .sort(
-            (a, b) =>
-              new Date(b.createdDate.replace(/\./g, '-')).getTime() -
-              new Date(a.createdDate.replace(/\./g, '-')).getTime()
-          )
+          .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate))
           .slice(0, 3);
 
         return {
@@ -101,11 +98,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
     if (!selectedMedium) return [];
     return allPublishedEntries
       .filter((e) => e.medium === selectedMedium)
-      .sort(
-        (a, b) =>
-          new Date(b.createdDate.replace(/\./g, '-')).getTime() -
-          new Date(a.createdDate.replace(/\./g, '-')).getTime()
-      );
+      .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate));
   }, [allPublishedEntries, selectedMedium]);
 
   return (
@@ -312,7 +305,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono-archival text-[#8C8C82]">
                             <div className="flex items-center space-x-2.5">
                               <span className="font-semibold text-[#141413]">
-                                {entry.createdDate}
+                                {formatFullDate(entry.createdDate)}
                               </span>
                               <span>•</span>
                               <span className="text-[#141413]">
