@@ -19,3 +19,8 @@ database_name = "ruigallery-db"
 database_id = "a0ea467f-3f8c-4ce2-b106-3a503cb3928d"
 migrations_dir = "migrations"
 
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "ruigallery-media"
+
+

@@ -20,12 +20,169 @@ import {
   normalizeNullableText,
 } from './worker';
 
+export interface ImageValidationResult {
+  valid: boolean;
+  format?: 'jpeg' | 'png' | 'webp' | 'gif' | 'avif';
+  mimeType?: string;
+  extension?: string;
+  error?: string;
+}
+
+export function validateImageSignature(bytes: Uint8Array): ImageValidationResult {
+  if (bytes.length < 12) {
+    return { valid: false, error: 'File is too small or truncated to be a valid image' };
+  }
+
+  // 1. JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { valid: true, format: 'jpeg', mimeType: 'image/jpeg', extension: 'jpg' };
+  }
+
+  // 2. PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return { valid: true, format: 'png', mimeType: 'image/png', extension: 'png' };
+  }
+
+  // 3. GIF: GIF87a or GIF89a
+  if (
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+    bytes[5] === 0x61
+  ) {
+    return { valid: true, format: 'gif', mimeType: 'image/gif', extension: 'gif' };
+  }
+
+  // 4. WebP: RIFF .... WEBP
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return { valid: true, format: 'webp', mimeType: 'image/webp', extension: 'webp' };
+  }
+
+  // Check for ISO Base Media File Format (ftyp box at offset 4)
+  const isFtyp =
+    bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
+
+  if (isFtyp) {
+    const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]).toLowerCase();
+    // 5. AVIF
+    if (brand === 'avif' || brand === 'avis') {
+      return { valid: true, format: 'avif', mimeType: 'image/avif', extension: 'avif' };
+    }
+    // Explicit rejection of HEIC/HEIF
+    if (['heic', 'heix', 'hevc', 'mif1', 'msf1'].includes(brand)) {
+      return {
+        valid: false,
+        error: 'HEIC/HEIF format is not natively supported across web browsers. Please convert to JPEG, PNG, or WebP before uploading.',
+      };
+    }
+  }
+
+  return {
+    valid: false,
+    error: 'Unsupported file format. Allowed image formats are JPEG, PNG, WebP, GIF, and AVIF.',
+  };
+}
+
 export async function handleAdminMutationRoutes(
   request: Request,
   env: Env,
   pathname: string,
   method: string
 ): Promise<Response> {
+  // -------------------------------------------------------------------------
+  // 0. MEDIA UPLOAD (Cloudflare R2)
+  // -------------------------------------------------------------------------
+
+  // POST /api/admin/media/upload
+  if (pathname === '/api/admin/media/upload') {
+    if (method !== 'POST') return errorResponse('Method Not Allowed', 405);
+
+    const contentType = request.headers.get('content-type') || '';
+    if (!contentType.includes('multipart/form-data')) {
+      return errorResponse('Content-Type must be multipart/form-data', 400);
+    }
+
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Invalid form data';
+      return errorResponse(`Failed to parse multipart form data: ${msg}`, 400);
+    }
+
+    const file = formData.get('file');
+    if (!file || !(file instanceof File)) {
+      return errorResponse('Missing file. Expected field "file" in multipart form data', 400);
+    }
+
+    const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+    if (file.size > MAX_SIZE) {
+      return errorResponse(`File size (${(file.size / (1024 * 1024)).toFixed(2)} MB) exceeds 10 MB limit`, 413);
+    }
+
+    if (file.size === 0) {
+      return errorResponse('File is empty', 400);
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const headerBytes = new Uint8Array(arrayBuffer.slice(0, 32));
+    const validation = validateImageSignature(headerBytes);
+
+    if (!validation.valid || !validation.extension || !validation.mimeType) {
+      return errorResponse(validation.error || 'Invalid or unsupported image file', 400);
+    }
+
+    if (!env.MEDIA_BUCKET) {
+      return errorResponse('Storage bucket (MEDIA_BUCKET) is not configured in Worker environment', 503);
+    }
+
+    const timestamp = Date.now();
+    const randomHex = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    const key = `entries/${timestamp}-${randomHex}.${validation.extension}`;
+
+    await env.MEDIA_BUCKET.put(key, arrayBuffer, {
+      httpMetadata: {
+        contentType: validation.mimeType,
+        cacheControl: 'public, max-age=31536000, s-maxage=31536000, immutable',
+      },
+      customMetadata: {
+        originalName: file.name ? file.name.slice(0, 120) : 'upload',
+        uploadedAt: new Date().toISOString(),
+        size: file.size.toString(),
+      },
+    });
+
+    const publicUrl = `/api/media/${key}`;
+
+    return jsonResponse({
+      success: true,
+      data: {
+        url: publicUrl,
+        key,
+      },
+    });
+  }
+
   // -------------------------------------------------------------------------
   // 1. COLLECTIONS MUTATIONS
   // -------------------------------------------------------------------------

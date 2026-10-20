@@ -21,6 +21,10 @@ import {
   List as ListIcon,
   Bookmark,
   Code,
+  Upload,
+  Link as LinkIcon,
+  Loader2,
+  X,
 } from 'lucide-react';
 import {
   Entry,
@@ -34,6 +38,8 @@ import {
 import { EntryReaderPreview } from './EntryReaderPreview';
 import { FormattedTextarea } from '../utils/textFormatting';
 import { formatFullDate } from '../utils/dateFormatting';
+import { api } from '../services/api';
+import { ImageUploaderField } from './ImageUploaderField';
 
 interface EntryEditorProps {
   initialEntry?: Entry | null;
@@ -750,52 +756,21 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
 
             {/* Cover Image */}
             <div className="md:col-span-12 p-4 bg-[#F4F3EE] border border-[#E5E3DB] space-y-3">
-              <label className="block text-[#141413] text-[11px] font-semibold uppercase">
-                Featured Cover Image
-              </label>
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                <div className="md:col-span-8 space-y-2">
-                  <input
-                    type="text"
-                    value={coverImage}
-                    onChange={(e) => setCoverImage(e.target.value)}
-                    placeholder="https://images.unsplash.com/... or relative URL"
-                    className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      value={coverImageCaption}
-                      onChange={(e) => setCoverImageCaption(e.target.value)}
-                      placeholder="Image Caption (optional)"
-                      className="w-full p-1.5 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413] text-[11px]"
-                    />
-                    <input
-                      type="text"
-                      value={coverImageAlt}
-                      onChange={(e) => setCoverImageAlt(e.target.value)}
-                      placeholder="Image Alt Text (optional)"
-                      className="w-full p-1.5 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413] text-[11px]"
-                    />
-                  </div>
-                </div>
-
-                <div className="md:col-span-4">
-                  {coverImage ? (
-                    <div className="relative border border-[#E5E3DB] bg-[#EAE8E0] h-28 overflow-hidden">
-                      <img
-                        src={coverImage}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  ) : (
-                    <div className="h-28 border border-dashed border-[#E5E3DB] bg-[#FBFBFA] flex items-center justify-center text-[#8C8C82] text-[10px]">
-                      No cover image specified
-                    </div>
-                  )}
-                </div>
+              <div className="flex items-center justify-between pb-1 border-b border-[#E5E3DB]">
+                <label className="block text-[#141413] text-[11px] font-semibold uppercase">
+                  Featured Cover Image
+                </label>
+                <span className="text-[10px] text-[#8C8C82]">Used for Homepage teasers and header hero banner</span>
               </div>
+              <ImageUploaderField
+                value={coverImage}
+                onChange={setCoverImage}
+                caption={coverImageCaption}
+                onCaptionChange={setCoverImageCaption}
+                alt={coverImageAlt}
+                onAltChange={setCoverImageAlt}
+                placeholder="https://... or upload an archival cover image"
+              />
             </div>
           </div>
         </section>
@@ -964,63 +939,43 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                 )}
 
                 {block.type === 'image' && (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value={block.url}
-                      onChange={(e) => updateBlockAt(idx, { ...block, url: e.target.value })}
-                      placeholder="Image URL"
-                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                    />
-                    <input
-                      type="text"
-                      value={block.caption || ''}
-                      onChange={(e) => updateBlockAt(idx, { ...block, caption: e.target.value })}
-                      placeholder="Image Caption"
-                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                    />
-                    {block.url && (
-                      <div className="h-32 bg-[#EAE8E0] overflow-hidden border border-[#E5E3DB] max-w-xs">
-                        <img src={block.url} alt="Preview" className="w-full h-full object-cover" />
-                      </div>
-                    )}
-                  </div>
+                  <ImageUploaderField
+                    value={block.url}
+                    onChange={(url) => updateBlockAt(idx, { ...block, url })}
+                    caption={block.caption}
+                    onCaptionChange={(caption) => updateBlockAt(idx, { ...block, caption })}
+                    alt={block.alt}
+                    onAltChange={(alt) => updateBlockAt(idx, { ...block, alt })}
+                    scanInfo={block.scanInfo}
+                    onScanInfoChange={(scanInfo) => updateBlockAt(idx, { ...block, scanInfo })}
+                    placeholder="https://... or upload an archival document image"
+                  />
                 )}
 
                 {block.type === 'two_column_images' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="p-2 bg-[#FBFBFA] border border-[#E5E3DB] space-y-2">
-                      <span className="text-[10px] text-[#8C8C82] block">Column 1 Image</span>
-                      <input
-                        type="text"
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-3 bg-[#FBFBFA] border border-[#E5E3DB] space-y-2">
+                      <span className="text-[10px] text-[#8C8C82] uppercase tracking-wider block font-semibold">
+                        Column 1 Image
+                      </span>
+                      <ImageUploaderField
                         value={block.url1}
-                        onChange={(e) => updateBlockAt(idx, { ...block, url1: e.target.value })}
-                        placeholder="Image 1 URL"
-                        className="w-full p-1.5 bg-[#F4F3EE] border border-[#E5E3DB] text-[11px]"
-                      />
-                      <input
-                        type="text"
-                        value={block.caption1 || ''}
-                        onChange={(e) => updateBlockAt(idx, { ...block, caption1: e.target.value })}
-                        placeholder="Image 1 Caption"
-                        className="w-full p-1.5 bg-[#F4F3EE] border border-[#E5E3DB] text-[11px]"
+                        onChange={(url1) => updateBlockAt(idx, { ...block, url1 })}
+                        caption={block.caption1}
+                        onCaptionChange={(caption1) => updateBlockAt(idx, { ...block, caption1 })}
+                        placeholder="Image 1 URL or upload"
                       />
                     </div>
-                    <div className="p-2 bg-[#FBFBFA] border border-[#E5E3DB] space-y-2">
-                      <span className="text-[10px] text-[#8C8C82] block">Column 2 Image</span>
-                      <input
-                        type="text"
+                    <div className="p-3 bg-[#FBFBFA] border border-[#E5E3DB] space-y-2">
+                      <span className="text-[10px] text-[#8C8C82] uppercase tracking-wider block font-semibold">
+                        Column 2 Image
+                      </span>
+                      <ImageUploaderField
                         value={block.url2}
-                        onChange={(e) => updateBlockAt(idx, { ...block, url2: e.target.value })}
-                        placeholder="Image 2 URL"
-                        className="w-full p-1.5 bg-[#F4F3EE] border border-[#E5E3DB] text-[11px]"
-                      />
-                      <input
-                        type="text"
-                        value={block.caption2 || ''}
-                        onChange={(e) => updateBlockAt(idx, { ...block, caption2: e.target.value })}
-                        placeholder="Image 2 Caption"
-                        className="w-full p-1.5 bg-[#F4F3EE] border border-[#E5E3DB] text-[11px]"
+                        onChange={(url2) => updateBlockAt(idx, { ...block, url2 })}
+                        caption={block.caption2}
+                        onCaptionChange={(caption2) => updateBlockAt(idx, { ...block, caption2 })}
+                        placeholder="Image 2 URL or upload"
                       />
                     </div>
                   </div>

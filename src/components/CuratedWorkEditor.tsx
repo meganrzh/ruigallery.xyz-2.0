@@ -24,6 +24,7 @@ import {
   Entry,
 } from '../types';
 import { CuratedWorkReaderPreview } from './CuratedWorkReaderPreview';
+import { ImageUploaderField } from './ImageUploaderField';
 
 interface CuratedWorkEditorProps {
   initialWork?: CuratedWork | null;
@@ -467,60 +468,20 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
               </select>
             </div>
 
-            {/* Cover Image URL */}
-            <div className="md:col-span-3">
-              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Primary Cover Image URL *</label>
-              <div className="flex gap-3 items-center">
-                <input
-                  type="url"
-                  required
-                  value={coverImage}
-                  onChange={(e) => setCoverImage(e.target.value)}
-                  placeholder="https://images.unsplash.com/photo-..."
-                  className="flex-1 p-2 bg-white border border-[#E5E3DB] text-[#141413]"
-                />
-                {coverImage && (
-                  <img
-                    src={coverImage}
-                    alt="Preview"
-                    className="w-10 h-10 object-cover border border-[#E5E3DB] shrink-0"
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Cover Image Metadata: Caption & Alt Text */}
-            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                  Cover Image Caption (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={coverImageCaption}
-                  onChange={(e) => setCoverImageCaption(e.target.value)}
-                  placeholder="Editorial caption displayed beneath the primary plate in reader view"
-                  className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413] text-sm"
-                />
-                <span className="block text-[10px] font-mono-archival text-[#8C8C82] mt-1">
-                  Appears beneath the primary plate in reader view
-                </span>
-              </div>
-              <div>
-                <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                  Cover Image Alt Text (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={coverImageAlt}
-                  onChange={(e) => setCoverImageAlt(e.target.value)}
-                  placeholder="Descriptive text for accessibility and screen readers"
-                  className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413] text-sm"
-                />
-                <span className="block text-[10px] font-mono-archival text-[#8C8C82] mt-1">
-                  Screen reader accessibility description
-                </span>
-              </div>
+            {/* Cover Image & Metadata */}
+            <div className="md:col-span-3 p-4 bg-[#F4F3EE] border border-[#E5E3DB]">
+              <label className="block text-[#141413] text-[11px] font-semibold uppercase mb-2">
+                Primary Cover Image *
+              </label>
+              <ImageUploaderField
+                value={coverImage}
+                onChange={setCoverImage}
+                caption={coverImageCaption}
+                onCaptionChange={setCoverImageCaption}
+                alt={coverImageAlt}
+                onAltChange={setCoverImageAlt}
+                placeholder="https://... or upload an archival plate image"
+              />
             </div>
 
             {/* Excerpt */}
@@ -882,151 +843,48 @@ export const CuratedWorkEditor: React.FC<CuratedWorkEditorProps> = ({
 
                 {/* Single Image Block Content */}
                 {block.type === 'image' && (
-                  <div className="space-y-3 text-xs font-mono-archival">
-                    <div>
-                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Image URL</label>
-                      <input
-                        type="url"
-                        value={block.url}
-                        onChange={(e) =>
-                          updateBlock(index, {
-                            ...block,
-                            url: e.target.value,
-                          })
-                        }
-                        placeholder="https://..."
-                        className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Caption</label>
-                        <input
-                          type="text"
-                          value={block.caption || ''}
-                          onChange={(e) =>
-                            updateBlock(index, {
-                              ...block,
-                              caption: e.target.value,
-                            })
-                          }
-                          placeholder="Plate caption..."
-                          className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Alt Text</label>
-                        <input
-                          type="text"
-                          value={block.alt || ''}
-                          onChange={(e) =>
-                            updateBlock(index, {
-                              ...block,
-                              alt: e.target.value,
-                            })
-                          }
-                          placeholder="Visual description..."
-                          className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
-                        />
-                      </div>
-                    </div>
-                    {block.url && (
-                      <div className="pt-2">
-                        <img
-                          src={block.url}
-                          alt={block.alt || 'Preview'}
-                          className="max-h-48 object-cover border border-[#E5E3DB]"
-                        />
-                      </div>
-                    )}
+                  <div className="p-3 bg-[#F4F3EE] border border-[#E5E3DB]">
+                    <ImageUploaderField
+                      value={block.url}
+                      onChange={(url) => updateBlock(index, { ...block, url })}
+                      caption={block.caption}
+                      onCaptionChange={(caption) => updateBlock(index, { ...block, caption })}
+                      alt={block.alt}
+                      onAltChange={(alt) => updateBlock(index, { ...block, alt })}
+                      placeholder="https://... or upload an archival plate image"
+                    />
                   </div>
                 )}
 
                 {/* Diptych Block Content */}
                 {block.type === 'two_column_images' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono-archival">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono-archival">
                     {/* Column 1 */}
                     <div className="p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
-                      <span className="font-semibold text-[#141413] block">LEFT IMAGE</span>
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Image URL</label>
-                        <input
-                          type="url"
-                          value={block.url1}
-                          onChange={(e) =>
-                            updateBlock(index, {
-                              ...block,
-                              url1: e.target.value,
-                            })
-                          }
-                          placeholder="https://..."
-                          className="w-full p-2 bg-white border border-[#E5E3DB]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Caption</label>
-                        <input
-                          type="text"
-                          value={block.caption1 || ''}
-                          onChange={(e) =>
-                            updateBlock(index, {
-                              ...block,
-                              caption1: e.target.value,
-                            })
-                          }
-                          placeholder="Left caption..."
-                          className="w-full p-2 bg-white border border-[#E5E3DB]"
-                        />
-                      </div>
-                      {block.url1 && (
-                        <img
-                          src={block.url1}
-                          alt="Left Preview"
-                          className="h-28 w-full object-cover border border-[#E5E3DB]"
-                        />
-                      )}
+                      <span className="font-semibold text-[#141413] block uppercase tracking-wider text-[10px]">
+                        Left Plate Image
+                      </span>
+                      <ImageUploaderField
+                        value={block.url1}
+                        onChange={(url1) => updateBlock(index, { ...block, url1 })}
+                        caption={block.caption1}
+                        onCaptionChange={(caption1) => updateBlock(index, { ...block, caption1 })}
+                        placeholder="Left image URL or upload"
+                      />
                     </div>
 
                     {/* Column 2 */}
                     <div className="p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
-                      <span className="font-semibold text-[#141413] block">RIGHT IMAGE</span>
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Image URL</label>
-                        <input
-                          type="url"
-                          value={block.url2}
-                          onChange={(e) =>
-                            updateBlock(index, {
-                              ...block,
-                              url2: e.target.value,
-                            })
-                          }
-                          placeholder="https://..."
-                          className="w-full p-2 bg-white border border-[#E5E3DB]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Caption</label>
-                        <input
-                          type="text"
-                          value={block.caption2 || ''}
-                          onChange={(e) =>
-                            updateBlock(index, {
-                              ...block,
-                              caption2: e.target.value,
-                            })
-                          }
-                          placeholder="Right caption..."
-                          className="w-full p-2 bg-white border border-[#E5E3DB]"
-                        />
-                      </div>
-                      {block.url2 && (
-                        <img
-                          src={block.url2}
-                          alt="Right Preview"
-                          className="h-28 w-full object-cover border border-[#E5E3DB]"
-                        />
-                      )}
+                      <span className="font-semibold text-[#141413] block uppercase tracking-wider text-[10px]">
+                        Right Plate Image
+                      </span>
+                      <ImageUploaderField
+                        value={block.url2}
+                        onChange={(url2) => updateBlock(index, { ...block, url2 })}
+                        caption={block.caption2}
+                        onCaptionChange={(caption2) => updateBlock(index, { ...block, caption2 })}
+                        placeholder="Right image URL or upload"
+                      />
                     </div>
                   </div>
                 )}

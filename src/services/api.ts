@@ -420,6 +420,24 @@ export const api = {
     await parseApiResponse<unknown>(res, 'Failed to delete study');
   },
 
+  // Media Upload (Cloudflare R2)
+  async uploadMedia(file: File): Promise<{ url: string; key: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch('/api/admin/media/upload', {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+    });
+
+    const json = await parseApiResponse<{ url: string; key: string }>(res, 'Failed to upload media file');
+    if (!json.data || !json.data.url) {
+      throw new Error('Upload succeeded but server did not return a valid media URL');
+    }
+    return json.data;
+  },
+
   // Threads CRUD
   async getThreads(): Promise<Thread[]> {
     const res = await fetch('/api/threads', { credentials: 'same-origin' });

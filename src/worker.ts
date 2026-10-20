@@ -4,6 +4,7 @@
  * non-API static routes and SPAs to static assets.
  */
 
+import type { R2Bucket } from '@cloudflare/workers-types';
 import { handleAdminMutationRoutes } from './adminRoutes';
 
 export interface D1Result<T = unknown> {
@@ -33,6 +34,7 @@ export interface D1Database {
 
 export interface Env {
   DB: D1Database;
+  MEDIA_BUCKET?: R2Bucket;
   ASSETS?: {
     fetch: (request: Request) => Promise<Response>;
   };
@@ -612,6 +614,72 @@ export default {
       // -----------------------------------------------------------------------
       // PUBLIC UNRESTRICTED READ-ONLY API (GET)
       // -----------------------------------------------------------------------
+
+      // 0. GET /api/media/* (Public R2 Object Streaming)
+      if (pathname.startsWith('/api/media/') && method === 'GET') {
+        const rawKey = pathname.slice('/api/media/'.length);
+        let key: string;
+        try {
+          key = decodeURIComponent(rawKey).trim().replace(/^\/+/, '');
+        } catch {
+          return errorResponse('Invalid media key encoding', 400);
+        }
+
+        if (!key || key.includes('..') || key.includes('\\')) {
+          return errorResponse('Invalid media key path', 400);
+        }
+
+        // Check Cloudflare Cache API for edge-cached response
+        const cache = (caches as any).default;
+        const cacheKey = new Request(url.toString(), request);
+        let cachedResponse: Response | undefined;
+        try {
+          if (cache && typeof cache.match === 'function') {
+            cachedResponse = await cache.match(cacheKey);
+          }
+        } catch {
+          // ignore cache lookup errors in non-CF/local runtimes
+        }
+
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+
+        if (!env.MEDIA_BUCKET) {
+          return errorResponse('Storage bucket (MEDIA_BUCKET) is not configured', 503);
+        }
+
+        const object = await env.MEDIA_BUCKET.get(key);
+        if (!object) {
+          return errorResponse('Media object not found', 404);
+        }
+
+        const headers = new Headers();
+        headers.set('Content-Type', object.httpMetadata?.contentType || 'application/octet-stream');
+        if (object.httpEtag) {
+          headers.set('ETag', object.httpEtag);
+        }
+        headers.set('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
+        headers.set('Access-Control-Allow-Origin', '*');
+        if (object.size !== undefined) {
+          headers.set('Content-Length', object.size.toString());
+        }
+
+        const response = new Response(object.body, {
+          status: 200,
+          headers,
+        });
+
+        try {
+          if (cache && typeof cache.put === 'function') {
+            cache.put(cacheKey, response.clone());
+          }
+        } catch {
+          // ignore in environments without cache.put
+        }
+
+        return response;
+      }
 
       // 1. GET /api/archive (Aggregate for initial hydration)
       if (pathname === '/api/archive' && method === 'GET') {
