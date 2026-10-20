@@ -78,7 +78,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
           description: `Archival entries cataloged under the ${name} discipline.`,
           tag: 'MEDIUM',
         };
-        const sampleEntries = allPublishedEntries
+        const latestWorks = allPublishedEntries
           .filter((e) => e.medium === name)
           .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate))
           .slice(0, 3);
@@ -88,7 +88,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
           count: counts[name],
           description: meta.description,
           tag: meta.tag,
-          sampleEntries,
+          latestWorks,
         };
       });
   }, [allPublishedEntries]);
@@ -186,23 +186,23 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                             </p>
                           </div>
 
-                          {/* Sample entries preview */}
-                          {med.sampleEntries.length > 0 && (
+                          {/* Latest works preview */}
+                          {med.latestWorks.length > 0 && (
                             <div className="pt-3 border-t border-[#EFEFEA] space-y-1.5">
                               <span className="text-[10px] font-mono-archival text-[#8C8C82] uppercase tracking-wider block">
-                                Recent Entries
+                                Latest Works
                               </span>
                               <ul className="space-y-1">
-                                {med.sampleEntries.map((sample) => (
+                                {med.latestWorks.map((work) => (
                                   <li
-                                    key={sample.id}
+                                    key={work.id}
                                     className="text-xs font-serif truncate flex items-center space-x-1.5 text-[#5C5C54]"
                                   >
                                     <span className="text-[#8C8C82] font-mono-archival text-[10px] shrink-0">
-                                      {sample.entryNumber}
+                                      {work.entryNumber}
                                     </span>
                                     <span className="truncate group-hover:text-[#141413] transition-colors">
-                                      {sample.title}
+                                      {work.title}
                                     </span>
                                   </li>
                                 ))}
