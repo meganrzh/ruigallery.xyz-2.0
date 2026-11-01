@@ -4,6 +4,7 @@ import { Entry, Collection, Study, Thread } from '../types';
 import { EntryBodyRenderer } from './EntryBodyRenderer';
 import { EntryMetadataHeader } from './EntryMetadataHeader';
 import { formatFullDate } from '../utils/dateFormatting';
+import { isImageLedMedium } from '../utils/mediumHelpers';
 
 interface EntryReaderPreviewProps {
   entry: Partial<Entry> & {
@@ -115,11 +116,17 @@ export const EntryReaderPreview: React.FC<EntryReaderPreviewProps> = ({
           {/* Optional Cover Image */}
           {fullEntry.coverImage && (
             <figure className="my-6">
-              <img
-                src={fullEntry.coverImage}
-                alt={fullEntry.coverImageAlt || fullEntry.title}
-                className="w-full max-h-[560px] object-cover border border-[#E5E3DB] bg-[#F4F3EE]"
-              />
+              <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-2 flex items-center justify-center">
+                <img
+                  src={fullEntry.coverImage}
+                  alt={fullEntry.coverImageAlt || fullEntry.title}
+                  className={
+                    isImageLedMedium(fullEntry.medium)
+                      ? 'w-auto max-w-full max-h-[780px] object-contain mx-auto'
+                      : 'w-full max-h-[560px] object-cover'
+                  }
+                />
+              </div>
               {fullEntry.coverImageCaption && (
                 <figcaption className="text-xs font-mono-archival text-[#8C8C82] mt-2 italic">
                   {fullEntry.coverImageCaption}

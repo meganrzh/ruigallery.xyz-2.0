@@ -3,6 +3,7 @@ import { ArrowRight, ArrowLeft, FolderKanban, Layers, Database, CornerDownRight 
 import { AppView, INITIAL_ENTRY_MEDIUMS } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { formatFullDate, compareDatesDesc } from '../utils/dateFormatting';
+import { isImageLedMedium, getEntryPreviewImage } from '../utils/mediumHelpers';
 
 interface LaboratoryViewProps {
   onNavigate: (view: AppView) => void;
@@ -160,63 +161,132 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                     No published mediums currently available.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {availableMediums.map((med) => (
-                      <div
-                        key={med.name}
-                        onClick={() => setSelectedMedium(med.name)}
-                        className="group p-5 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] cursor-pointer transition-all flex flex-col justify-between"
-                      >
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between text-xs font-mono-archival text-[#8C8C82]">
-                            <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-[#EAE8E0] text-[#141413] font-medium">
-                              {med.tag}
-                            </span>
-                            <span className="text-[#9E2A2B] font-semibold">
-                              {med.count} {med.count === 1 ? 'RECORD' : 'RECORDS'}
-                            </span>
-                          </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    {availableMediums.map((med) => {
+                      const isImageLed = isImageLedMedium(med.name);
 
-                          <div>
-                            <h3 className="font-serif text-xl text-[#141413] group-hover:text-[#9E2A2B] font-medium transition-colors">
-                              {med.name}
-                            </h3>
-                            <p className="font-serif text-xs text-[#5C5C54] mt-1.5 leading-relaxed">
-                              {med.description}
-                            </p>
-                          </div>
-
-                          {/* Latest works preview */}
-                          {med.latestWorks.length > 0 && (
-                            <div className="pt-3 border-t border-[#EFEFEA] space-y-1.5">
-                              <span className="text-[10px] font-mono-archival text-[#8C8C82] uppercase tracking-wider block">
-                                Latest Works
+                      return (
+                        <div
+                          key={med.name}
+                          className="group p-6 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] transition-all flex flex-col justify-between"
+                        >
+                          <div className="space-y-4">
+                            {/* Card Category Header */}
+                            <div className="flex items-center justify-between text-xs font-mono-archival text-[#8C8C82]">
+                              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-[#EAE8E0] text-[#141413] font-medium">
+                                {med.tag}
                               </span>
-                              <ul className="space-y-1">
-                                {med.latestWorks.map((work) => (
-                                  <li
-                                    key={work.id}
-                                    className="text-xs font-serif truncate flex items-center space-x-1.5 text-[#5C5C54]"
-                                  >
-                                    <span className="text-[#8C8C82] font-mono-archival text-[10px] shrink-0">
-                                      {work.entryNumber}
-                                    </span>
-                                    <span className="truncate group-hover:text-[#141413] transition-colors">
-                                      {work.title}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
+                              <span className="text-[#9E2A2B] font-semibold">
+                                {med.count} {med.count === 1 ? 'RECORD' : 'RECORDS'}
+                              </span>
                             </div>
-                          )}
-                        </div>
 
-                        <div className="pt-4 flex items-center justify-between text-xs font-mono-archival text-[#141413] font-medium group-hover:text-[#9E2A2B] transition-colors border-t border-[#EFEFEA] mt-4">
-                          <span>Browse Medium Entries</span>
-                          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                            {/* Card Title & Description */}
+                            <div>
+                              <h3
+                                onClick={() => setSelectedMedium(med.name)}
+                                className="font-serif text-2xl text-[#141413] group-hover:text-[#9E2A2B] font-medium transition-colors cursor-pointer inline-block"
+                              >
+                                {med.name}
+                              </h3>
+                              <p className="font-serif text-xs text-[#5C5C54] mt-1.5 leading-relaxed">
+                                {med.description}
+                              </p>
+                            </div>
+
+                            {/* Latest works section */}
+                            {med.latestWorks.length > 0 && (
+                              <div className="pt-4 border-t border-[#EFEFEA] space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-mono-archival text-[#8C8C82] uppercase tracking-wider block font-medium">
+                                    Latest Works
+                                  </span>
+                                </div>
+
+                                {isImageLed ? (
+                                  /* Compact Image-Led Previews for Visual Work & Clothing / Upcycling */
+                                  <div className="grid grid-cols-3 gap-2.5 pt-1 items-start">
+                                    {med.latestWorks.map((work) => {
+                                      const previewImg = getEntryPreviewImage(work);
+
+                                      return (
+                                        <div
+                                          key={work.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onNavigate({ page: 'entry', slug: work.slug });
+                                          }}
+                                          className="group/work cursor-pointer text-left flex flex-col"
+                                          title={`View ${work.title}`}
+                                        >
+                                          {/* Compact Uncropped Plate */}
+                                          <div className="w-full h-20 bg-[#F4F3EE] border border-[#E5E3DB] group-hover/work:border-[#141413] flex items-center justify-center p-1 overflow-hidden transition-colors">
+                                            {previewImg ? (
+                                              <img
+                                                src={previewImg.url}
+                                                alt={previewImg.alt || work.title}
+                                                className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-200 group-hover/work:scale-[1.03]"
+                                                loading="lazy"
+                                              />
+                                            ) : (
+                                              <span className="text-[8px] font-mono-archival text-[#8C8C82] text-center px-1 uppercase">
+                                                Text
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {/* Archival Identification: Accession Number + Date + Title */}
+                                          <div className="pt-1.5 space-y-0.5 min-w-0">
+                                            <div className="text-[9px] font-mono-archival text-[#8C8C82] truncate">
+                                              <span className="text-[#9E2A2B] font-medium">{work.entryNumber}</span>
+                                              <span className="mx-1">•</span>
+                                              <span>{formatFullDate(work.createdDate)}</span>
+                                            </div>
+                                            <h4 className="font-serif text-[11px] text-[#141413] group-hover/work:text-[#9E2A2B] font-medium leading-snug line-clamp-2 transition-colors">
+                                              {work.title}
+                                            </h4>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  /* Text-Oriented Mediums (Creative Writing, Analytical Essay, Research / Inquiry) */
+                                  <ul className="space-y-1.5">
+                                    {med.latestWorks.map((work) => (
+                                      <li
+                                        key={work.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onNavigate({ page: 'entry', slug: work.slug });
+                                        }}
+                                        className="text-xs font-serif truncate flex items-center space-x-1.5 text-[#5C5C54] hover:text-[#141413] cursor-pointer group/item py-0.5"
+                                        title={`View ${work.title}`}
+                                      >
+                                        <span className="text-[#8C8C82] group-hover/item:text-[#9E2A2B] font-mono-archival text-[10px] shrink-0 font-medium">
+                                          {work.entryNumber}
+                                        </span>
+                                        <span className="truncate group-hover/item:text-[#141413] transition-colors">
+                                          {work.title}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div
+                            onClick={() => setSelectedMedium(med.name)}
+                            className="pt-4 flex items-center justify-between text-xs font-mono-archival text-[#141413] font-medium group-hover:text-[#9E2A2B] transition-colors border-t border-[#EFEFEA] mt-5 cursor-pointer"
+                          >
+                            <span>Browse All {med.name} Records ({med.count})</span>
+                            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -294,79 +364,96 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                     mediumEntries.map((entry) => {
                       const collection = getCollection(entry.collectionId);
                       const study = getStudy(entry.studyId);
+                      const previewImg = isImageLedMedium(selectedMedium)
+                        ? getEntryPreviewImage(entry)
+                        : null;
 
                       return (
                         <article
                           key={entry.id}
                           onClick={() => onNavigate({ page: 'entry', slug: entry.slug })}
-                          className="group py-5 px-3 -mx-3 hover:bg-[#F4F3EE]/80 cursor-pointer transition-colors space-y-2.5"
+                          className="group py-5 px-3 -mx-3 hover:bg-[#F4F3EE]/80 cursor-pointer transition-colors flex flex-col sm:flex-row gap-5 items-start justify-between"
                         >
-                          {/* Entry Header: Date + ID + Revision + Location */}
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono-archival text-[#8C8C82]">
-                            <div className="flex items-center space-x-2.5">
-                              <span className="font-semibold text-[#141413]">
-                                {formatFullDate(entry.createdDate)}
-                              </span>
-                              <span>•</span>
-                              <span className="text-[#141413]">
-                                ENTRY {entry.entryNumber}
-                              </span>
-                              {entry.ruiRevision && (
-                                <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] text-[10px] font-medium">
-                                  {entry.ruiRevision}
+                          <div className="space-y-2.5 flex-1 min-w-0">
+                            {/* Entry Header: Date + ID + Revision + Location */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono-archival text-[#8C8C82]">
+                              <div className="flex items-center space-x-2.5">
+                                <span className="font-semibold text-[#141413]">
+                                  {formatFullDate(entry.createdDate)}
+                                </span>
+                                <span>•</span>
+                                <span className="text-[#141413]">
+                                  ENTRY {entry.entryNumber}
+                                </span>
+                                {entry.ruiRevision && (
+                                  <span className="px-1 py-0.2 bg-[#EAE8E0] text-[#9E2A2B] text-[10px] font-medium">
+                                    {entry.ruiRevision}
+                                  </span>
+                                )}
+                              </div>
+                              {entry.location && (
+                                <span className="text-[11px] text-[#8C8C82]">
+                                  {entry.location}
                                 </span>
                               )}
                             </div>
-                            {entry.location && (
-                              <span className="text-[11px] text-[#8C8C82]">
-                                {entry.location}
-                              </span>
-                            )}
-                          </div>
 
-                          {/* Entry Title */}
-                          <h3 className="font-serif text-xl sm:text-2xl text-[#141413] group-hover:text-[#9E2A2B] transition-colors leading-snug font-medium">
-                            {entry.title}
-                          </h3>
+                            {/* Entry Title */}
+                            <h3 className="font-serif text-xl sm:text-2xl text-[#141413] group-hover:text-[#9E2A2B] transition-colors leading-snug font-medium">
+                              {entry.title}
+                            </h3>
 
-                          {/* Contextual Hierarchy: Study & Collection */}
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-mono-archival text-[#6E6E66]">
-                            {study && (
-                              <span className="flex items-center space-x-1">
-                                <span className="text-[#8C8C82]">Study:</span>
-                                <span className="text-[#141413]">{study.title}</span>
-                              </span>
-                            )}
-                            {collection && (
-                              <span className="flex items-center space-x-1">
-                                <span className="text-[#8C8C82]">Col:</span>
-                                <span>{collection.title}</span>
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Summary if present */}
-                          {entry.summary && (
-                            <p className="font-serif text-sm text-[#4A4A44] leading-relaxed line-clamp-2 pt-1">
-                              {entry.summary}
-                            </p>
-                          )}
-
-                          {/* Associated Threads */}
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {entry.threadIds.map((tId) => {
-                              const t = getThread(tId);
-                              if (!t) return null;
-                              return (
-                                <span
-                                  key={t.id}
-                                  className="text-[10px] font-mono-archival px-1.5 py-0.5 bg-[#FBFBFA] border border-[#E5E3DB] text-[#6E6E66]"
-                                >
-                                  #{t.name}
+                            {/* Contextual Hierarchy: Study & Collection */}
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-mono-archival text-[#6E6E66]">
+                              {study && (
+                                <span className="flex items-center space-x-1">
+                                  <span className="text-[#8C8C82]">Study:</span>
+                                  <span className="text-[#141413]">{study.title}</span>
                                 </span>
-                              );
-                            })}
+                              )}
+                              {collection && (
+                                <span className="flex items-center space-x-1">
+                                  <span className="text-[#8C8C82]">Col:</span>
+                                  <span>{collection.title}</span>
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Summary if present */}
+                            {entry.summary && (
+                              <p className="font-serif text-sm text-[#4A4A44] leading-relaxed line-clamp-2 pt-1">
+                                {entry.summary}
+                              </p>
+                            )}
+
+                            {/* Associated Threads */}
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {entry.threadIds.map((tId) => {
+                                const t = getThread(tId);
+                                if (!t) return null;
+                                return (
+                                  <span
+                                    key={t.id}
+                                    className="text-[10px] font-mono-archival px-1.5 py-0.5 bg-[#FBFBFA] border border-[#E5E3DB] text-[#6E6E66]"
+                                  >
+                                    #{t.name}
+                                  </span>
+                                );
+                              })}
+                            </div>
                           </div>
+
+                          {/* Visual plate for Image-Led Medium entries */}
+                          {previewImg && (
+                            <div className="w-full sm:w-40 md:w-48 h-36 shrink-0 bg-[#F4F3EE] border border-[#E5E3DB] p-2 flex items-center justify-center overflow-hidden">
+                              <img
+                                src={previewImg.url}
+                                alt={previewImg.alt || entry.title}
+                                className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-300 group-hover:scale-[1.02]"
+                                loading="lazy"
+                              />
+                            </div>
+                          )}
                         </article>
                       );
                     })

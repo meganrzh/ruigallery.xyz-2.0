@@ -94,13 +94,13 @@ export const EntryBodyRenderer: React.FC<EntryBodyRendererProps> = ({ blocks }) 
           case 'image':
             return (
               <div key={idx} className="my-8 space-y-2">
-                <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-1">
-                  {/* Embedded document image - no gallery lightbox as specified */}
+                <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-2 flex items-center justify-center">
+                  {/* Embedded document image - uncropped plate presentation */}
                   <img
                     src={block.url}
                     alt={block.alt || 'Archival document evidence'}
                     referrerPolicy="no-referrer"
-                    className="w-full h-auto max-h-[560px] object-cover"
+                    className="w-auto max-w-full h-auto max-h-[720px] object-contain mx-auto"
                   />
                 </div>
                 {(block.caption || block.scanInfo) && (

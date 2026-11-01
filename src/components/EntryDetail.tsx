@@ -4,6 +4,7 @@ import { AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { EntryMetadataHeader } from './EntryMetadataHeader';
 import { EntryBodyRenderer } from './EntryBodyRenderer';
+import { isImageLedMedium } from '../utils/mediumHelpers';
 
 interface EntryDetailProps {
   slug: string;
@@ -109,11 +110,17 @@ export const EntryDetail: React.FC<EntryDetailProps> = ({ slug, onNavigate }) =>
         {/* Optional Cover Image */}
         {entry.coverImage && (
           <figure className="my-6">
-            <img
-              src={entry.coverImage}
-              alt={entry.coverImageAlt || entry.title}
-              className="w-full max-h-[560px] object-cover border border-[#E5E3DB] bg-[#F4F3EE]"
-            />
+            <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-2 flex items-center justify-center">
+              <img
+                src={entry.coverImage}
+                alt={entry.coverImageAlt || entry.title}
+                className={
+                  isImageLedMedium(entry.medium)
+                    ? 'w-auto max-w-full max-h-[780px] object-contain mx-auto'
+                    : 'w-full max-h-[560px] object-cover'
+                }
+              />
+            </div>
             {entry.coverImageCaption && (
               <figcaption className="text-xs font-mono-archival text-[#8C8C82] mt-2 italic">
                 {entry.coverImageCaption}
