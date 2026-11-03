@@ -18,6 +18,10 @@ export const EntryMetadataHeader: React.FC<EntryMetadataHeaderProps> = ({
   threads,
   onNavigate,
 }) => {
+  const publicDate = entry.displayDate?.trim()
+    ? entry.displayDate
+    : formatFullDate(entry.createdDate);
+
   return (
     <div className="border border-[#E5E3DB] bg-[#F4F3EE]/60 text-xs font-mono-archival">
       {/* Top Banner: ID & System Status */}
@@ -49,7 +53,7 @@ export const EntryMetadataHeader: React.FC<EntryMetadataHeaderProps> = ({
           )}
         </div>
         <div className="flex items-center space-x-2 text-[#8C8C82] text-[11px]">
-          <span>CREATED: {formatFullDate(entry.createdDate)}</span>
+          {publicDate && <span>DATE: {publicDate}</span>}
           {entry.lastModifiedDate && formatFullDate(entry.lastModifiedDate) !== formatFullDate(entry.createdDate) && (
             <span>(MODIFIED: {formatFullDate(entry.lastModifiedDate)})</span>
           )}

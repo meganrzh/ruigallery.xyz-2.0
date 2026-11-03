@@ -98,7 +98,7 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
   const [createdDate, setCreatedDate] = useState(
     initialEntry?.createdDate
       ? formatFullDate(initialEntry.createdDate)
-      : new Date().toISOString().slice(0, 10).replace(/-/g, '.')
+      : ''
   );
   const [displayDate, setDisplayDate] = useState(initialEntry?.displayDate || '');
   const [location, setLocation] = useState(initialEntry?.location || '');
@@ -187,6 +187,10 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
     }
     if (!title.trim()) {
       setFormError('Please enter an Entry Title.');
+      return;
+    }
+    if (!createdDate.trim()) {
+      setFormError('Archival Date is required (e.g. YYYY.MM.DD) to position the work chronologically in the archive.');
       return;
     }
 
@@ -474,7 +478,7 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
             </div>
 
             {/* Creative Medium Classification */}
-            <div className="md:col-span-6 p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
+            <div className="md:col-span-8 p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
               <label className="block text-[#141413] text-[11px] font-semibold uppercase flex items-center justify-between">
                 <span>Creative Medium Classification</span>
                 <span className="text-[#8C8C82] text-[10px] font-normal">Controls Laboratory Filter</span>
@@ -506,7 +510,7 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
             </div>
 
             {/* RUI Revision */}
-            <div className="md:col-span-3 p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
+            <div className="md:col-span-4 p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
               <label className="block text-[#141413] text-[11px] font-semibold uppercase">
                 RUI Revision
               </label>
@@ -523,18 +527,40 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
               </select>
             </div>
 
-            {/* Created Date / Display Date */}
-            <div className="md:col-span-3 p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-2">
-              <label className="block text-[#141413] text-[11px] font-semibold uppercase">
-                Archival Date
+            {/* Archival Date & Display Date (Adjacent in Section 1) */}
+            <div className="md:col-span-6 p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-1.5">
+              <label className="block text-[#141413] text-[11px] font-semibold uppercase flex items-center justify-between">
+                <span>Archival Date *</span>
+                <span className="text-[#8C8C82] text-[10px] font-normal">YYYY.MM.DD</span>
               </label>
               <input
                 type="text"
                 value={createdDate}
                 onChange={(e) => setCreatedDate(e.target.value)}
                 placeholder="2026.10.14"
-                className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
+                className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413] font-mono-archival"
+                required
               />
+              <p className="text-[10px] text-[#8C8C82] leading-tight">
+                The historical/chronological date of the work. Used for archive ordering and Latest Works.
+              </p>
+            </div>
+
+            <div className="md:col-span-6 p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-1.5">
+              <label className="block text-[#141413] text-[11px] font-semibold uppercase flex items-center justify-between">
+                <span>Display Date</span>
+                <span className="text-[#8C8C82] text-[10px] font-normal">Optional Editorial</span>
+              </label>
+              <input
+                type="text"
+                value={displayDate}
+                onChange={(e) => setDisplayDate(e.target.value)}
+                placeholder="e.g. May 2025, Autumn 2024"
+                className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413] font-mono-archival"
+              />
+              <p className="text-[10px] text-[#8C8C82] leading-tight">
+                Optional public-facing date wording, e.g. May 2025, Autumn 2024.
+              </p>
             </div>
           </div>
         </section>
@@ -725,33 +751,18 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
               )}
             </div>
 
-            {/* Display Date & Excerpt */}
-            <div className="md:col-span-6 space-y-3">
-              <div>
-                <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                  Display Date (Editorial)
-                </label>
-                <input
-                  type="text"
-                  value={displayDate}
-                  onChange={(e) => setDisplayDate(e.target.value)}
-                  placeholder="e.g. October 2026"
-                  className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
-                  Summary / Thesis Excerpt
-                </label>
-                <textarea
-                  rows={3}
-                  value={summary}
-                  onChange={(e) => setSummary(e.target.value)}
-                  placeholder="A concise summary or thesis opening for teasers and homepage cards..."
-                  className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] font-serif text-sm text-[#141413]"
-                />
-              </div>
+            {/* Summary / Thesis Excerpt */}
+            <div className="md:col-span-6 space-y-1">
+              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">
+                Summary / Thesis Excerpt
+              </label>
+              <textarea
+                rows={4}
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                placeholder="A concise summary or thesis opening for teasers and homepage cards..."
+                className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] font-serif text-sm text-[#141413]"
+              />
             </div>
 
             {/* Cover Image */}

@@ -235,13 +235,11 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                                             )}
                                           </div>
 
-                                          {/* Archival Identification: Accession Number + Date + Title */}
+                                          {/* Archival Identification: Accession Number + Title (mirrors text mediums) */}
                                           <div className="pt-1.5 space-y-0.5 min-w-0">
-                                            <div className="text-[9px] font-mono-archival text-[#8C8C82] truncate">
-                                              <span className="text-[#9E2A2B] font-medium">{work.entryNumber}</span>
-                                              <span className="mx-1">•</span>
-                                              <span>{formatFullDate(work.createdDate)}</span>
-                                            </div>
+                                            <span className="text-[#8C8C82] group-hover/work:text-[#9E2A2B] font-mono-archival text-[10px] font-medium block">
+                                              {work.entryNumber}
+                                            </span>
                                             <h4 className="font-serif text-[11px] text-[#141413] group-hover/work:text-[#9E2A2B] font-medium leading-snug line-clamp-2 transition-colors">
                                               {work.title}
                                             </h4>

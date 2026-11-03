@@ -708,6 +708,10 @@ export async function handleAdminMutationRoutes(
       }
     }
 
+    if (!body.createdDate || !body.createdDate.trim()) {
+      return errorResponse('createdDate (Archival Date) is required for Entry archival chronology (e.g. YYYY.MM.DD)', 400);
+    }
+
     const id = body.id || `entry-${Date.now()}`;
     const slug =
       body.slug?.trim() ||
@@ -720,10 +724,10 @@ export async function handleAdminMutationRoutes(
     const excerpt = body.excerpt || null;
     const location = body.location || '';
     const now = new Date().toISOString();
-    const archivalDate = body.createdDate || now.slice(0, 10).replace(/-/g, '.');
-    const displayDate = body.displayDate || null;
-    const publishedDate = body.publishedDate || archivalDate;
-    const lastModifiedDate = body.lastModifiedDate || archivalDate;
+    const archivalDate = body.createdDate.trim();
+    const displayDate = body.displayDate?.trim() || null;
+    const publishedDate = body.publishedDate?.trim() || archivalDate;
+    const lastModifiedDate = body.lastModifiedDate?.trim() || archivalDate;
     const featuredOnHome = body.featuredOnHome ? 1 : 0;
     const homeLayoutWeight = body.homeLayoutWeight || 'standard';
     const coverImage = body.coverImage?.trim() || null;
@@ -932,8 +936,11 @@ export async function handleAdminMutationRoutes(
       const subtitle = normalizeNullableText(body.subtitle, existingEntry.subtitle, true);
       const summary = body.summary !== undefined ? body.summary : existingEntry.summary;
       const excerpt = normalizeNullableText(body.excerpt, existingEntry.excerpt, true);
-      const location = body.location !== undefined ? body.location : existingEntry.location;
-      const archivalDate = body.createdDate !== undefined ? body.createdDate : existingEntry.archival_date;
+      if (body.createdDate !== undefined && !body.createdDate.trim()) {
+        return errorResponse('createdDate cannot be empty', 400);
+      }
+      const archivalDate =
+        body.createdDate !== undefined ? body.createdDate.trim() : existingEntry.archival_date;
       const displayDate = normalizeNullableText(body.displayDate, existingEntry.display_date, true);
       const publishedDate = body.publishedDate !== undefined ? body.publishedDate : existingEntry.published_date;
       const lastModifiedDate = now;
