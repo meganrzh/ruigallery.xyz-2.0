@@ -3,31 +3,12 @@ import { ArrowRight, ArrowLeft, FolderKanban, Layers, Database, CornerDownRight 
 import { AppView, INITIAL_ENTRY_MEDIUMS } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { formatFullDate, compareDatesDesc } from '../utils/dateFormatting';
-import { isImageLedMedium, getEntryPreviewImage } from '../utils/mediumHelpers';
+import { isImageLedMedium, getEntryPreviewImage, getMediumDefinition, CANONICAL_MEDIUMS } from '../utils/mediumHelpers';
 
 interface LaboratoryViewProps {
   onNavigate: (view: AppView) => void;
   filterThreadId?: string;
 }
-
-const MEDIUM_METADATA: Record<string, { description: string; tag: string }> = {
-  'Creative Writing': {
-    description: 'Textual prose, speculative narratives, lyrical fragments, and literary inquiry.',
-    tag: 'TEXT & PROSE',
-  },
-  'Clothing / Upcycling': {
-    description: 'Textile construction, pattern deconstruction, material reuse, and garment studies.',
-    tag: 'TEXTILE & FORM',
-  },
-  'Visual Work': {
-    description: 'Photographic documentation, typographic surveys, architectural rubbings, and visual artifacts.',
-    tag: 'VISUAL & PLASTIC',
-  },
-  'Research / Inquiry': {
-    description: 'Methodological frameworks, archival indexing, critical bibliography, and epistemic notes.',
-    tag: 'EPISTEMIC & THEORY',
-  },
-};
 
 export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) => {
   const {
@@ -54,44 +35,39 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
     return [...collections].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }, [collections]);
 
-  // Derive active mediums strictly from published entries (no empty categories publicly)
+  // Derive medium cards from canonical taxonomy so all 6 canonical mediums exist
+  // as part of RUI's architecture, plus any custom mediums with published entries
   const availableMediums = useMemo(() => {
     const counts: Record<string, number> = {};
     allPublishedEntries.forEach((entry) => {
       if (entry.medium && entry.medium.trim()) {
-        counts[entry.medium] = (counts[entry.medium] || 0) + 1;
+        const m = entry.medium.trim();
+        counts[m] = (counts[m] || 0) + 1;
       }
     });
 
-    const mediums = Object.keys(counts).filter((m) => counts[m] > 0);
+    const canonicalNames = Object.keys(CANONICAL_MEDIUMS);
+    const customNames = Object.keys(counts).filter(
+      (m) => counts[m] > 0 && !canonicalNames.includes(m)
+    );
 
-    return mediums
-      .sort((a, b) => {
-        const idxA = INITIAL_ENTRY_MEDIUMS.indexOf(a as any);
-        const idxB = INITIAL_ENTRY_MEDIUMS.indexOf(b as any);
-        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-        if (idxA !== -1) return -1;
-        if (idxB !== -1) return 1;
-        return a.localeCompare(b);
-      })
-      .map((name) => {
-        const meta = MEDIUM_METADATA[name] || {
-          description: `Archival entries cataloged under the ${name} discipline.`,
-          tag: 'MEDIUM',
-        };
-        const latestWorks = allPublishedEntries
-          .filter((e) => e.medium === name)
-          .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate))
-          .slice(0, 3);
+    const allNames = [...canonicalNames, ...customNames];
 
-        return {
-          name,
-          count: counts[name],
-          description: meta.description,
-          tag: meta.tag,
-          latestWorks,
-        };
-      });
+    return allNames.map((name) => {
+      const meta = getMediumDefinition(name);
+      const latestWorks = allPublishedEntries
+        .filter((e) => e.medium?.trim() === name)
+        .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate))
+        .slice(0, 3);
+
+      return {
+        name,
+        count: counts[name] || 0,
+        description: meta.description,
+        tag: meta.tag,
+        latestWorks,
+      };
+    });
   }, [allPublishedEntries]);
 
   // Entries within currently selected medium
@@ -101,6 +77,14 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
       .filter((e) => e.medium === selectedMedium)
       .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate));
   }, [allPublishedEntries, selectedMedium]);
+
+  // Collections scoped specifically to currently selected medium
+  const mediumScopedCollections = useMemo(() => {
+    if (!selectedMedium) return [];
+    return collections
+      .filter((c) => c.mediumScope === selectedMedium)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }, [collections, selectedMedium]);
 
   return (
     <div className="py-12 md:py-20 animate-fade-in">
@@ -195,84 +179,86 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                             </div>
 
                             {/* Latest works section */}
-                            {med.latestWorks.length > 0 && (
-                              <div className="pt-4 border-t border-[#EFEFEA] space-y-2.5">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-mono-archival text-[#8C8C82] uppercase tracking-wider block font-medium">
-                                    Latest Works
-                                  </span>
-                                </div>
+                            <div className="pt-4 border-t border-[#EFEFEA] space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-mono-archival text-[#8C8C82] uppercase tracking-wider block font-medium">
+                                  Latest Works
+                                </span>
+                              </div>
 
-                                {isImageLed ? (
-                                  /* Compact Image-Led Previews for Visual Work & Clothing / Upcycling */
-                                  <div className="grid grid-cols-3 gap-2.5 pt-1 items-start">
-                                    {med.latestWorks.map((work) => {
-                                      const previewImg = getEntryPreviewImage(work);
+                              {med.latestWorks.length === 0 ? (
+                                <p className="text-xs font-serif italic text-[#8C8C82] py-0.5">
+                                  No published records in this medium.
+                                </p>
+                              ) : isImageLed ? (
+                                /* Compact Image-Led Previews for Visual Work & Clothing / Upcycling */
+                                <div className="grid grid-cols-3 gap-2.5 pt-1 items-start">
+                                  {med.latestWorks.map((work) => {
+                                    const previewImg = getEntryPreviewImage(work);
 
-                                      return (
-                                        <div
-                                          key={work.id}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onNavigate({ page: 'entry', slug: work.slug });
-                                          }}
-                                          className="group/work cursor-pointer text-left flex flex-col"
-                                          title={`View ${work.title}`}
-                                        >
-                                          {/* Compact Uncropped Plate */}
-                                          <div className="w-full h-20 bg-[#F4F3EE] border border-[#E5E3DB] group-hover/work:border-[#141413] flex items-center justify-center p-1 overflow-hidden transition-colors">
-                                            {previewImg ? (
-                                              <img
-                                                src={previewImg.url}
-                                                alt={previewImg.alt || work.title}
-                                                className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-200 group-hover/work:scale-[1.03]"
-                                                loading="lazy"
-                                              />
-                                            ) : (
-                                              <span className="text-[8px] font-mono-archival text-[#8C8C82] text-center px-1 uppercase">
-                                                Text
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          {/* Archival Identification: Accession Number + Title (mirrors text mediums) */}
-                                          <div className="pt-1.5 space-y-0.5 min-w-0">
-                                            <span className="text-[#8C8C82] group-hover/work:text-[#9E2A2B] font-mono-archival text-[10px] font-medium block">
-                                              {work.entryNumber}
-                                            </span>
-                                            <h4 className="font-serif text-[11px] text-[#141413] group-hover/work:text-[#9E2A2B] font-medium leading-snug line-clamp-2 transition-colors">
-                                              {work.title}
-                                            </h4>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                ) : (
-                                  /* Text-Oriented Mediums (Creative Writing, Analytical Essay, Research / Inquiry) */
-                                  <ul className="space-y-1.5">
-                                    {med.latestWorks.map((work) => (
-                                      <li
+                                    return (
+                                      <div
                                         key={work.id}
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           onNavigate({ page: 'entry', slug: work.slug });
                                         }}
-                                        className="text-xs font-serif truncate flex items-center space-x-1.5 text-[#5C5C54] hover:text-[#141413] cursor-pointer group/item py-0.5"
+                                        className="group/work cursor-pointer text-left flex flex-col"
                                         title={`View ${work.title}`}
                                       >
-                                        <span className="text-[#8C8C82] group-hover/item:text-[#9E2A2B] font-mono-archival text-[10px] shrink-0 font-medium">
-                                          {work.entryNumber}
-                                        </span>
-                                        <span className="truncate group-hover/item:text-[#141413] transition-colors">
-                                          {work.title}
-                                        </span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                            )}
+                                        {/* Compact Uncropped Plate */}
+                                        <div className="w-full h-20 bg-[#F4F3EE] border border-[#E5E3DB] group-hover/work:border-[#141413] flex items-center justify-center p-1 overflow-hidden transition-colors">
+                                          {previewImg ? (
+                                            <img
+                                              src={previewImg.url}
+                                              alt={previewImg.alt || work.title}
+                                              className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-200 group-hover/work:scale-[1.03]"
+                                              loading="lazy"
+                                            />
+                                          ) : (
+                                            <span className="text-[8px] font-mono-archival text-[#8C8C82] text-center px-1 uppercase">
+                                              Text
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* Archival Identification: Accession Number + Title (mirrors text mediums) */}
+                                        <div className="pt-1.5 space-y-0.5 min-w-0">
+                                          <span className="text-[#8C8C82] group-hover/work:text-[#9E2A2B] font-mono-archival text-[10px] font-medium block">
+                                            {work.entryNumber}
+                                          </span>
+                                          <h4 className="font-serif text-[11px] text-[#141413] group-hover/work:text-[#9E2A2B] font-medium leading-snug line-clamp-2 transition-colors">
+                                            {work.title}
+                                          </h4>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                /* Text-Oriented Mediums (Creative Writing, Analytical Essay, Research / Inquiry, Curated Event) */
+                                <ul className="space-y-1.5">
+                                  {med.latestWorks.map((work) => (
+                                    <li
+                                      key={work.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onNavigate({ page: 'entry', slug: work.slug });
+                                      }}
+                                      className="text-xs font-serif truncate flex items-center space-x-1.5 text-[#5C5C54] hover:text-[#141413] cursor-pointer group/item py-0.5"
+                                      title={`View ${work.title}`}
+                                    >
+                                      <span className="text-[#8C8C82] group-hover/item:text-[#9E2A2B] font-mono-archival text-[10px] shrink-0 font-medium">
+                                        {work.entryNumber}
+                                      </span>
+                                      <span className="truncate group-hover/item:text-[#141413] transition-colors">
+                                        {work.title}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
                           </div>
 
                           <div
@@ -309,14 +295,14 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                   <div className="pb-3 border-b border-[#E5E3DB]">
                     <div>
                       <div className="flex items-center space-x-2 text-xs font-mono-archival text-[#8C8C82] tracking-wider uppercase mb-1">
-                        <span className="text-[#9E2A2B] font-semibold">MEDIUM CLASSIFICATION</span>
+                        <span className="text-[#9E2A2B] font-semibold">{getMediumDefinition(selectedMedium).tag}</span>
                       </div>
                       <h2 className="font-serif text-2xl sm:text-3xl text-[#141413] font-medium">
                         {selectedMedium}
                       </h2>
-                      {MEDIUM_METADATA[selectedMedium]?.description && (
+                      {getMediumDefinition(selectedMedium).description && (
                         <p className="font-serif text-xs text-[#5C5C54] mt-1 italic">
-                          {MEDIUM_METADATA[selectedMedium].description}
+                          {getMediumDefinition(selectedMedium).description}
                         </p>
                       )}
                     </div>
@@ -351,6 +337,48 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                     </div>
                   </div>
                 </div>
+
+                {/* Medium-Scoped Collections (Series) - Collapsed entirely if none exist */}
+                {mediumScopedCollections.length > 0 && (
+                  <div className="space-y-3 pb-6 border-b border-[#E5E3DB]">
+                    <span className="text-[10px] font-mono-archival text-[#8C8C82] uppercase tracking-wider block font-medium">
+                      Series
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {mediumScopedCollections.map((col) => {
+                        const publishedWorksCount = allPublishedEntries.filter(
+                          (e) => e.collectionId === col.id
+                        ).length;
+
+                        return (
+                          <div
+                            key={col.id}
+                            onClick={() => onNavigate({ page: 'collection', slug: col.slug })}
+                            className="group p-3.5 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] transition-colors cursor-pointer text-left flex flex-col justify-between"
+                          >
+                            <div className="space-y-1">
+                              <h4 className="font-serif text-sm font-medium text-[#141413] group-hover:text-[#9E2A2B] transition-colors leading-snug">
+                                {col.title}
+                              </h4>
+                              {col.subtitle && (
+                                <p className="font-serif text-xs text-[#5C5C54] italic line-clamp-2 leading-relaxed">
+                                  {col.subtitle}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="pt-2 mt-2 border-t border-[#EFEFEA] text-[11px] font-mono-archival text-[#8C8C82]">
+                              <span>
+                                {publishedWorksCount} {publishedWorksCount === 1 ? 'work' : 'works'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* List of Entries in this medium */}
                 <div className="divide-y divide-[#E5E3DB] border-y border-[#E5E3DB]">
@@ -488,7 +516,15 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                     className="p-5 bg-[#F4F3EE] border border-[#E5E3DB] space-y-3 hover:border-[#141413] transition-colors"
                   >
                     <div className="flex items-center justify-between text-xs font-mono-archival text-[#8C8C82]">
-                      <span>{collection.period}</span>
+                      <div className="flex items-center space-x-1.5">
+                        <span>{collection.period}</span>
+                        {collection.mediumScope && (
+                          <>
+                            <span>•</span>
+                            <span className="text-[#9E2A2B] font-medium uppercase text-[10px]">{collection.mediumScope}</span>
+                          </>
+                        )}
+                      </div>
                       <span className="text-[#141413] font-medium">{totalEntries} ENTRIES</span>
                     </div>
 

@@ -12,6 +12,7 @@ export interface Collection {
   period: string;
   order: number;
   locationContext?: string;
+  mediumScope?: EntryMedium | null;
 }
 
 export interface Study {
@@ -44,9 +45,11 @@ export type EntryBlock =
 
 export const INITIAL_ENTRY_MEDIUMS = [
   'Creative Writing',
-  'Clothing / Upcycling',
-  'Visual Work',
+  'Analytical Essay',
   'Research / Inquiry',
+  'Visual Work',
+  'Clothing / Upcycling',
+  'Curated Event',
 ] as const;
 
 export type EntryMedium = (typeof INITIAL_ENTRY_MEDIUMS)[number] | (string & {});

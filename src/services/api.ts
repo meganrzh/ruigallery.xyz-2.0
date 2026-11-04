@@ -21,6 +21,7 @@ export interface RawCollectionRecord {
   description: string | null;
   period: string | null;
   location_context: string | null;
+  medium_scope?: string | null;
   order_index: number;
   created_at: string;
   updated_at: string;
@@ -89,6 +90,7 @@ export function mapRecordToCollection(record: RawCollectionRecord): Collection {
     period: record.period || '',
     order: record.order_index,
     locationContext: record.location_context || undefined,
+    mediumScope: record.medium_scope ? (record.medium_scope as any) : null,
   };
 }
 
@@ -294,6 +296,7 @@ export const api = {
     if (updates.description !== undefined) payload.description = updates.description || null;
     if (updates.period !== undefined) payload.period = updates.period || null;
     if (updates.locationContext !== undefined) payload.location_context = updates.locationContext || null;
+    if (updates.mediumScope !== undefined) payload.medium_scope = updates.mediumScope || null;
     if (updates.order !== undefined) payload.order_index = updates.order;
 
     const res = await fetch(`/api/admin/collections/${encodeURIComponent(id)}`, {
@@ -339,6 +342,7 @@ export const api = {
       description: collection.description || null,
       period: collection.period || null,
       location_context: collection.locationContext || null,
+      medium_scope: collection.mediumScope || null,
       order_index: collection.order || 0,
     };
 

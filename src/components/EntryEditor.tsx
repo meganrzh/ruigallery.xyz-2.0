@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Plus,
   Trash2,
@@ -93,6 +93,39 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
   // Collection & Study (Optional)
   const [collectionId, setCollectionId] = useState<string>(initialEntry?.collectionId || '');
   const [studyId, setStudyId] = useState<string>(initialEntry?.studyId || '');
+
+  // Current effective entry medium
+  const effectiveMedium = useMemo(() => {
+    if (mediumChoice === '__custom__') return customMedium.trim();
+    if (mediumChoice && mediumChoice !== '__none__') return mediumChoice.trim();
+    return '';
+  }, [mediumChoice, customMedium]);
+
+  // Current assigned collection object
+  const assignedCollection = useMemo(() => {
+    if (!collectionId) return null;
+    return collections.find((c) => c.id === collectionId) || null;
+  }, [collections, collectionId]);
+
+  // Check if assigned collection's medium scope conflicts with entry's medium
+  const isCollectionIncompatible = useMemo(() => {
+    if (!assignedCollection || !assignedCollection.mediumScope) return false;
+    // An assigned collection with a medium scope requires the entry to have that exact medium
+    return !effectiveMedium || assignedCollection.mediumScope !== effectiveMedium;
+  }, [assignedCollection, effectiveMedium]);
+
+  // Eligible collections to show in dropdown:
+  // 1. Cross-medium (mediumScope is null/undefined)
+  // 2. Scoped to the entry's current medium (mediumScope === effectiveMedium)
+  // 3. Current collection (if already assigned and incompatible, show with clear warning label so user can see it)
+  const eligibleCollections = useMemo(() => {
+    return collections.filter((c) => {
+      if (!c.mediumScope) return true;
+      if (effectiveMedium && c.mediumScope === effectiveMedium) return true;
+      if (c.id === collectionId) return true;
+      return false;
+    });
+  }, [collections, effectiveMedium, collectionId]);
 
   // Dates & Location
   const [createdDate, setCreatedDate] = useState(
@@ -191,6 +224,13 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
     }
     if (!createdDate.trim()) {
       setFormError('Archival Date is required (e.g. YYYY.MM.DD) to position the work chronologically in the archive.');
+      return;
+    }
+
+    if (isCollectionIncompatible && assignedCollection) {
+      setFormError(
+        `Cannot save: This Entry's medium ("${effectiveMedium || 'None'}") is incompatible with its assigned collection ("${assignedCollection.title}", scoped strictly to "${assignedCollection.mediumScope}"). Please select a compatible collection or clear the collection assignment.`
+      );
       return;
     }
 
@@ -507,6 +547,18 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                   autoFocus
                 />
               )}
+
+              {isCollectionIncompatible && assignedCollection && (
+                <div className="p-2.5 bg-[#FFF5F5] border border-[#9E2A2B]/40 text-[#9E2A2B] text-xs font-mono-archival flex items-start space-x-2 mt-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="font-semibold uppercase block">Collection Mismatch:</span>
+                    <p className="text-[11px] leading-tight">
+                      The assigned Collection ("{assignedCollection.title}") requires Medium "{assignedCollection.mediumScope}". Please reassign the Collection in Section 2 or clear it before saving.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* RUI Revision */}
@@ -584,24 +636,57 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
               <select
                 value={collectionId}
                 onChange={(e) => {
-                  setCollectionId(e.target.value);
+                  const nextId = e.target.value;
+                  setCollectionId(nextId);
                   // Reset study if not in this collection
-                  if (e.target.value) {
+                  if (nextId) {
                     const validInCol = studies.some(
-                      (s) => s.id === studyId && s.collectionId === e.target.value
+                      (s) => s.id === studyId && s.collectionId === nextId
                     );
                     if (!validInCol) setStudyId('');
+                  } else {
+                    setStudyId('');
                   }
                 }}
-                className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
+                className={`w-full p-2 bg-[#F4F3EE] border text-[#141413] ${
+                  isCollectionIncompatible ? 'border-[#9E2A2B] bg-[#FFF5F5]' : 'border-[#E5E3DB]'
+                }`}
               >
                 <option value="">(Independent / No Collection)</option>
-                {collections.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title}
-                  </option>
-                ))}
+                {eligibleCollections.map((c) => {
+                  const isThisIncompatible = Boolean(c.mediumScope && effectiveMedium && c.mediumScope !== effectiveMedium);
+                  const scopeLabel = c.mediumScope ? c.mediumScope : 'Cross-Medium';
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {c.title} — {scopeLabel}{isThisIncompatible ? ' [INCOMPATIBLE WITH MEDIUM]' : ''}
+                    </option>
+                  );
+                })}
               </select>
+
+              {isCollectionIncompatible && assignedCollection && (
+                <div className="p-3 bg-[#FFF5F5] border border-[#9E2A2B]/40 text-[#9E2A2B] text-xs font-mono-archival space-y-1.5 mt-2">
+                  <div className="flex items-center space-x-1.5 font-semibold uppercase">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Incompatible Collection Assignment</span>
+                  </div>
+                  <p className="leading-relaxed text-[11px]">
+                    This Entry is assigned to <strong className="text-[#141413]">"{assignedCollection.title}"</strong>, which is scoped strictly to <strong className="text-[#141413]">{assignedCollection.mediumScope}</strong>. Because this Entry's Medium is {effectiveMedium ? <strong className="text-[#141413]">"{effectiveMedium}"</strong> : 'unassigned'}, you must choose a compatible Collection or clear the assignment before saving.
+                  </p>
+                  <div className="pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCollectionId('');
+                        setStudyId('');
+                      }}
+                      className="underline font-semibold hover:text-[#141413] text-[11px]"
+                    >
+                      Clear Collection Assignment
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Study */}
@@ -795,32 +880,24 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                 <span>4. Archival Content Blocks ({blocks.length})</span>
               </h3>
               <span className="text-[10px] text-[#8C8C82]">
-                Universal block library for essays, fieldwork notebooks, images, and research data.
+                Core authoring primitives: Text, Image, Two Images, and Pullquote.
               </span>
             </div>
 
-            {/* Quick Add Buttons */}
-            <div className="flex flex-wrap gap-1 text-[11px]">
+            {/* Quick Add Buttons: 4 Core Primitives */}
+            <div className="flex flex-wrap gap-1.5 text-[11px]">
               <button
                 type="button"
-                onClick={() => addBlock({ type: 'paragraph', content: '' })}
-                className="px-2 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1"
+                onClick={() => addBlock({ type: 'text', content: '' })}
+                className="px-2.5 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1.5 transition-colors font-medium text-[#141413]"
               >
                 <AlignLeft className="w-3 h-3 text-[#9E2A2B]" />
-                <span>+ Paragraph</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => addBlock({ type: 'pullquote', quote: '', attribution: '' })}
-                className="px-2 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1"
-              >
-                <Quote className="w-3 h-3 text-[#9E2A2B]" />
-                <span>+ Pullquote</span>
+                <span>+ Text</span>
               </button>
               <button
                 type="button"
                 onClick={() => addBlock({ type: 'image', url: '', caption: '', alt: '' })}
-                className="px-2 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1"
+                className="px-2.5 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1.5 transition-colors font-medium text-[#141413]"
               >
                 <ImageIcon className="w-3 h-3 text-[#9E2A2B]" />
                 <span>+ Image</span>
@@ -836,42 +913,18 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                     caption2: '',
                   })
                 }
-                className="px-2 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1"
+                className="px-2.5 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1.5 transition-colors font-medium text-[#141413]"
               >
                 <Columns className="w-3 h-3 text-[#9E2A2B]" />
-                <span>+ 2 Col Images</span>
+                <span>+ Two Images</span>
               </button>
               <button
                 type="button"
-                onClick={() => addBlock({ type: 'fragment', note: '', source: '' })}
-                className="px-2 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1"
+                onClick={() => addBlock({ type: 'pullquote', quote: '', attribution: '' })}
+                className="px-2.5 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1.5 transition-colors font-medium text-[#141413]"
               >
-                <FileText className="w-3 h-3 text-[#9E2A2B]" />
-                <span>+ Fragment</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => addBlock({ type: 'observation', coordinates: '', text: '' })}
-                className="px-2 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1"
-              >
-                <MapPin className="w-3 h-3 text-[#9E2A2B]" />
-                <span>+ Observation</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => addBlock({ type: 'list', items: ['Item 1', 'Item 2'] })}
-                className="px-2 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1"
-              >
-                <ListIcon className="w-3 h-3 text-[#9E2A2B]" />
-                <span>+ List</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => addBlock({ type: 'reference', citation: '', link: '' })}
-                className="px-2 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1"
-              >
-                <Bookmark className="w-3 h-3 text-[#9E2A2B]" />
-                <span>+ Ref</span>
+                <Quote className="w-3 h-3 text-[#9E2A2B]" />
+                <span>+ Pullquote</span>
               </button>
             </div>
           </div>
@@ -920,11 +973,11 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                 {/* Block Editors */}
                 {(block.type === 'paragraph' || block.type === 'text') && (
                   <FormattedTextarea
-                    rows={4}
+                    rows={6}
                     value={block.content}
                     onChange={(val) => updateBlockAt(idx, { ...block, content: val })}
-                    placeholder="Write narrative prose or body paragraph..."
-                    label="Narrative Prose"
+                    placeholder="Write or paste text, stanzas, or narrative prose..."
+                    label="Text Content"
                   />
                 )}
 

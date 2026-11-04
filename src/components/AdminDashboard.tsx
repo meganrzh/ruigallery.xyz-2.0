@@ -189,6 +189,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [newColSubtitle, setNewColSubtitle] = useState('');
   const [newColDesc, setNewColDesc] = useState('');
   const [newColPeriod, setNewColPeriod] = useState('2026 — Present');
+  const [newColMediumScope, setNewColMediumScope] = useState('');
 
   // New Study Form State
   const [newStdTitle, setNewStdTitle] = useState('');
@@ -216,7 +217,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [editColSubtitle, setEditColSubtitle] = useState('');
   const [editColDesc, setEditColDesc] = useState('');
   const [editColPeriod, setEditColPeriod] = useState('');
+  const [editColMediumScope, setEditColMediumScope] = useState('');
   const [isSavingCol, setIsSavingCol] = useState(false);
+
+  // Detect entries that would become incompatible if the collection's medium scope is changed
+  const incompatibleEditEntries = useMemo(() => {
+    if (!editingColId || !editColMediumScope) return [];
+    return entries.filter(
+      (e) => e.collectionId === editingColId && e.medium && e.medium.trim() !== editColMediumScope.trim()
+    );
+  }, [editingColId, editColMediumScope, entries]);
 
   // Editing existing Study State
   const [editingStudyId, setEditingStudyId] = useState<string | null>(null);
@@ -232,11 +242,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     setEditColSubtitle(col.subtitle || '');
     setEditColDesc(col.description);
     setEditColPeriod(col.period);
+    setEditColMediumScope(col.mediumScope || '');
   };
 
   const handleSaveCollectionEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingColId || !editColTitle) return;
+    if (incompatibleEditEntries.length > 0) {
+      alert(
+        `Cannot save: ${incompatibleEditEntries.length} entries assigned to this collection have an incompatible medium. Please reassign or update those entries before changing medium scope.`
+      );
+      return;
+    }
     setIsSavingCol(true);
     try {
       await updateCollection(editingColId, {
@@ -244,6 +261,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         subtitle: editColSubtitle,
         description: editColDesc,
         period: editColPeriod,
+        mediumScope: editColMediumScope ? (editColMediumScope as any) : null,
       });
       setSuccessMessage(`Collection "${editColTitle}" updated and persisted!`);
       setEditingColId(null);
@@ -375,10 +393,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       subtitle: newColSubtitle,
       description: newColDesc,
       period: newColPeriod,
+      mediumScope: newColMediumScope ? (newColMediumScope as any) : null,
     });
     setNewColTitle('');
     setNewColSubtitle('');
     setNewColDesc('');
+    setNewColMediumScope('');
     setSuccessMessage(`Collection "${newColTitle}" created!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
@@ -1219,6 +1239,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                     />
                   </div>
                   <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Medium Scope</label>
+                    <select
+                      value={newColMediumScope}
+                      onChange={(e) => setNewColMediumScope(e.target.value)}
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
+                    >
+                      <option value="">Cross-Medium</option>
+                      {INITIAL_ENTRY_MEDIUMS.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-[#8C8C82] mt-1 italic">
+                      Cross-medium collections may contain work from any Medium. A scoped collection forms a body of work within one Medium.
+                    </p>
+                  </div>
+                  <div>
                     <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
                     <textarea
                       rows={3}
@@ -1350,15 +1388,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               />
                             </div>
                           </div>
-                          <div>
-                            <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
-                            <input
-                              type="text"
-                              value={editColPeriod}
-                              onChange={(e) => setEditColPeriod(e.target.value)}
-                              className="w-full p-2 bg-white border border-[#E5E3DB]"
-                            />
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
+                              <input
+                                type="text"
+                                value={editColPeriod}
+                                onChange={(e) => setEditColPeriod(e.target.value)}
+                                className="w-full p-2 bg-white border border-[#E5E3DB]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Medium Scope</label>
+                              <select
+                                value={editColMediumScope}
+                                onChange={(e) => setEditColMediumScope(e.target.value)}
+                                className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413]"
+                              >
+                                <option value="">Cross-Medium</option>
+                                {INITIAL_ENTRY_MEDIUMS.map((m) => (
+                                  <option key={m} value={m}>
+                                    {m}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
+                          <p className="text-[10px] text-[#8C8C82] italic -mt-1">
+                            Cross-medium collections may contain work from any Medium. A scoped collection forms a body of work within one Medium.
+                          </p>
+
+                          {incompatibleEditEntries.length > 0 && (
+                            <div className="p-3 bg-[#FFF5F5] border border-[#9E2A2B]/40 text-[#9E2A2B] text-xs font-mono-archival space-y-1">
+                              <span className="font-semibold block uppercase">
+                                ⚠ Incompatible Entries Warning ({incompatibleEditEntries.length})
+                              </span>
+                              <p>
+                                The following entries are currently assigned to this collection but have a different medium than "{editColMediumScope}":
+                              </p>
+                              <ul className="list-disc list-inside space-y-0.5 pt-1 text-[11px]">
+                                {incompatibleEditEntries.map((e) => (
+                                  <li key={e.id}>
+                                    [{e.entryNumber || 'Draft'}] <span className="font-medium text-[#141413]">"{e.title}"</span> — <span className="italic">{e.medium || 'No medium'}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                              <p className="pt-1 text-[10px] font-medium">
+                                Please reassign or update these entries before saving this medium scope.
+                              </p>
+                            </div>
+                          )}
+
                           <div>
                             <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
                             <textarea
@@ -1378,8 +1458,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                             </button>
                             <button
                               type="submit"
-                              disabled={isSavingCol}
-                              className="px-4 py-1.5 bg-[#9E2A2B] text-white font-semibold uppercase tracking-wider"
+                              disabled={isSavingCol || incompatibleEditEntries.length > 0}
+                              className="px-4 py-1.5 bg-[#9E2A2B] text-white font-semibold uppercase tracking-wider disabled:opacity-50"
                             >
                               {isSavingCol ? 'Saving...' : 'Save Collection'}
                             </button>
@@ -1401,6 +1481,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                                 <span className="px-2 py-0.5 bg-[#141413] text-[#FBFBFA] font-semibold text-[10px] tracking-wider">
                                   ORDER #{index + 1}
                                 </span>
+                                {collection.mediumScope ? (
+                                  <span className="px-2 py-0.5 bg-[#EAE8E0] text-[#141413] font-semibold text-[10px] tracking-wider uppercase border border-[#D5D3CB]">
+                                    {collection.mediumScope}
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-[#F4F3EE] text-[#6E6E66] font-semibold text-[10px] tracking-wider uppercase border border-[#E5E3DB]">
+                                    CROSS-MEDIUM
+                                  </span>
+                                )}
                                 <span className="font-semibold text-[#141413] text-sm">{collection.title}</span>
                                 <span>•</span>
                                 <span>{collection.period}</span>

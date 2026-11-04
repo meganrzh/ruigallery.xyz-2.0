@@ -156,7 +156,7 @@ export const ArchiveIndexTable: React.FC<ArchiveIndexTableProps> = ({
                 <option value="all">All Collections ({collections.length})</option>
                 {collections.map((col) => (
                   <option key={col.id} value={col.id}>
-                    {col.title}
+                    {col.title}{col.mediumScope ? ` (${col.mediumScope})` : ''}
                   </option>
                 ))}
               </select>

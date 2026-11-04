@@ -225,8 +225,8 @@ export async function handleAdminMutationRoutes(
     const now = new Date().toISOString();
 
     await env.DB.prepare(
-      `INSERT INTO collections (id, slug, title, subtitle, description, period, location_context, order_index, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO collections (id, slug, title, subtitle, description, period, location_context, medium_scope, order_index, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       id,
       slug,
@@ -235,6 +235,7 @@ export async function handleAdminMutationRoutes(
       body.description || null,
       body.period || null,
       body.location_context || null,
+      body.medium_scope ? body.medium_scope.trim() : null,
       order_index,
       now,
       now
@@ -266,6 +267,24 @@ export async function handleAdminMutationRoutes(
         return errorResponse('Collection title cannot be empty', 400);
       }
 
+      // Medium Scope Safety: verify no incompatible entries belong to this collection
+      if (body.medium_scope !== undefined && body.medium_scope !== null && body.medium_scope.trim() !== '') {
+        const targetScope = body.medium_scope.trim();
+        const incompatibleEntries = await env.DB.prepare(
+          'SELECT id, entry_number, title, medium FROM entries WHERE collection_id = ? AND medium IS NOT NULL AND medium != ?'
+        ).bind(id, targetScope).all<{ id: string; entry_number: string; title: string; medium: string }>();
+
+        if (incompatibleEntries.results && incompatibleEntries.results.length > 0) {
+          const list = incompatibleEntries.results
+            .map((e) => `[${e.entry_number || 'N/A'}] "${e.title}" (${e.medium})`)
+            .join(', ');
+          return errorResponse(
+            `Cannot change Medium Scope to "${targetScope}": Collection contains ${incompatibleEntries.results.length} incompatible entries: ${list}. Please reassign or update these entries before changing scope.`,
+            400
+          );
+        }
+      }
+
       const now = new Date().toISOString();
 
       const result = await env.DB.prepare(
@@ -276,6 +295,7 @@ export async function handleAdminMutationRoutes(
              period = COALESCE(?, period),
              location_context = COALESCE(?, location_context),
              order_index = COALESCE(?, order_index),
+             medium_scope = CASE WHEN ? = 1 THEN ? ELSE medium_scope END,
              updated_at = ?
          WHERE id = ?`
       ).bind(
@@ -285,6 +305,8 @@ export async function handleAdminMutationRoutes(
         body.period ?? null,
         body.location_context ?? null,
         body.order_index ?? null,
+        body.medium_scope !== undefined ? 1 : 0,
+        body.medium_scope ? body.medium_scope.trim() : null,
         now,
         id
       ).run();
