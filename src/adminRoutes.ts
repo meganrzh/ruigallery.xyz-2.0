@@ -708,9 +708,18 @@ export async function handleAdminMutationRoutes(
 
     let collectionId = body.collectionId?.trim() || null;
     if (collectionId) {
-      const col = await env.DB.prepare('SELECT id FROM collections WHERE id = ?').bind(collectionId).first();
+      const col = await env.DB.prepare(
+        'SELECT id, medium_scope, title FROM collections WHERE id = ?'
+      ).bind(collectionId).first<{ id: string; medium_scope: string | null; title: string }>();
       if (!col) {
         return errorResponse(`Referenced collection '${collectionId}' does not exist`, 400);
+      }
+      const entryMedium = body.medium?.trim() || null;
+      if (col.medium_scope && entryMedium && col.medium_scope !== entryMedium) {
+        return errorResponse(
+          `Cannot assign collection '${col.title}' (scoped strictly to '${col.medium_scope}') to an Entry with medium '${entryMedium}'`,
+          400
+        );
       }
     }
 
@@ -958,6 +967,22 @@ export async function handleAdminMutationRoutes(
       const subtitle = normalizeNullableText(body.subtitle, existingEntry.subtitle, true);
       const summary = body.summary !== undefined ? body.summary : existingEntry.summary;
       const excerpt = normalizeNullableText(body.excerpt, existingEntry.excerpt, true);
+      const location = normalizeNullableText(body.location, existingEntry.location, true);
+
+      if (collectionId) {
+        const col = await env.DB.prepare(
+          'SELECT id, medium_scope, title FROM collections WHERE id = ?'
+        ).bind(collectionId).first<{ id: string; medium_scope: string | null; title: string }>();
+        if (!col) {
+          return errorResponse(`Referenced collection '${collectionId}' does not exist`, 400);
+        }
+        if (col.medium_scope && medium && col.medium_scope !== medium) {
+          return errorResponse(
+            `Cannot assign collection '${col.title}' (scoped strictly to '${col.medium_scope}') to an Entry with medium '${medium}'`,
+            400
+          );
+        }
+      }
       if (body.createdDate !== undefined && !body.createdDate.trim()) {
         return errorResponse('createdDate cannot be empty', 400);
       }
