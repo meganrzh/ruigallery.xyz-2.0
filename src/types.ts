@@ -12,7 +12,6 @@ export interface Collection {
   period: string;
   order: number;
   locationContext?: string;
-  mediumScope?: EntryMedium | null;
 }
 
 export interface Study {
@@ -26,10 +25,20 @@ export interface Study {
   lastModified?: string;
   threadIds: string[];
   relatedStudyIds?: string[];
+  mediumScope?: EntryMedium | null;
   order: number;
 }
 
 export type RuiRevision = 'REV 00' | 'REV 01' | 'REV 02' | 'REV 03' | string;
+
+export interface GalleryImage {
+  url: string;
+  caption?: string;
+  alt?: string;
+  scanInfo?: string;
+}
+
+export type GalleryDisplay = 'grid' | 'slideshow';
 
 export type EntryBlock =
   | { type: 'paragraph'; content: string }
@@ -38,6 +47,7 @@ export type EntryBlock =
   | { type: 'image'; url: string; caption?: string; alt?: string; scanInfo?: string; fullWidth?: boolean; aspectRatio?: string }
   | { type: 'pullquote'; quote: string; attribution?: string }
   | { type: 'two_column_images'; url1: string; caption1?: string; alt1?: string; url2: string; caption2?: string; alt2?: string }
+  | { type: 'gallery'; images: GalleryImage[]; display: GalleryDisplay }
   | { type: 'reference'; citation: string; link?: string; year?: string }
   | { type: 'list'; items: string[]; title?: string }
   | { type: 'observation'; date?: string; coordinates?: string; text: string; label?: string }

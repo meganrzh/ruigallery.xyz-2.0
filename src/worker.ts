@@ -52,7 +52,6 @@ export interface CollectionRecord {
   description: string | null;
   period: string | null;
   location_context: string | null;
-  medium_scope?: string | null;
   order_index: number;
   created_at: string;
   updated_at: string;
@@ -66,6 +65,7 @@ export interface StudyRecord {
   subtitle: string | null;
   description: string | null;
   archival_date: string | null;
+  medium_scope?: string | null;
   order_index: number;
   created_at: string;
   updated_at: string;

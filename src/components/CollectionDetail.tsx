@@ -49,12 +49,6 @@ export const CollectionDetail: React.FC<CollectionDetailProps> = ({ slug, onNavi
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono-archival text-[#8C8C82]">
             <div className="flex items-center space-x-2">
               <span className="text-[#9E2A2B] font-semibold uppercase">COLLECTION</span>
-              {collection.mediumScope && (
-                <>
-                  <span>•</span>
-                  <span className="uppercase text-[#141413]">{collection.mediumScope}</span>
-                </>
-              )}
               <span>•</span>
               <span>{collection.period}</span>
             </div>
@@ -72,12 +66,6 @@ export const CollectionDetail: React.FC<CollectionDetailProps> = ({ slug, onNavi
           )}
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4 border-t border-[#EFEFEA] text-xs font-mono-archival text-[#6E6E66]">
-            {collection.mediumScope && (
-              <div>
-                <span className="block text-[#8C8C82] text-[10px] uppercase">Medium</span>
-                <span className="text-[#141413] font-medium">{collection.mediumScope}</span>
-              </div>
-            )}
             <div>
               <span className="block text-[#8C8C82] text-[10px] uppercase">Associated Studies</span>
               <span className="text-[#141413] font-medium">{studies.length} Studies</span>
@@ -120,7 +108,15 @@ export const CollectionDetail: React.FC<CollectionDetailProps> = ({ slug, onNavi
                 >
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs font-mono-archival text-[#8C8C82]">
-                      <span>STUDY #{study.order}</span>
+                      <div className="flex items-center space-x-2">
+                        <span>STUDY #{study.order}</span>
+                        {study.mediumScope && (
+                          <>
+                            <span>•</span>
+                            <span className="text-[#9E2A2B] uppercase text-[10px] font-medium">{study.mediumScope}</span>
+                          </>
+                        )}
+                      </div>
                       <span>{entriesInStudy.length} Entries</span>
                     </div>
 

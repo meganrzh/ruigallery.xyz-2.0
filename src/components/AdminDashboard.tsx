@@ -189,13 +189,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [newColSubtitle, setNewColSubtitle] = useState('');
   const [newColDesc, setNewColDesc] = useState('');
   const [newColPeriod, setNewColPeriod] = useState('2026 — Present');
-  const [newColMediumScope, setNewColMediumScope] = useState('');
 
   // New Study Form State
   const [newStdTitle, setNewStdTitle] = useState('');
   const [newStdSubtitle, setNewStdSubtitle] = useState('');
   const [newStdDesc, setNewStdDesc] = useState('');
   const [newStdColId, setNewStdColId] = useState(collections[0]?.id || '');
+  const [newStdMediumScope, setNewStdMediumScope] = useState('');
   const [newStdThreads, setNewStdThreads] = useState<string[]>([]);
 
   // New Thread State
@@ -217,16 +217,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [editColSubtitle, setEditColSubtitle] = useState('');
   const [editColDesc, setEditColDesc] = useState('');
   const [editColPeriod, setEditColPeriod] = useState('');
-  const [editColMediumScope, setEditColMediumScope] = useState('');
   const [isSavingCol, setIsSavingCol] = useState(false);
-
-  // Detect entries that would become incompatible if the collection's medium scope is changed
-  const incompatibleEditEntries = useMemo(() => {
-    if (!editingColId || !editColMediumScope) return [];
-    return entries.filter(
-      (e) => e.collectionId === editingColId && e.medium && e.medium.trim() !== editColMediumScope.trim()
-    );
-  }, [editingColId, editColMediumScope, entries]);
 
   // Editing existing Study State
   const [editingStudyId, setEditingStudyId] = useState<string | null>(null);
@@ -234,7 +225,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [editStudySubtitle, setEditStudySubtitle] = useState('');
   const [editStudyDesc, setEditStudyDesc] = useState('');
   const [editStudyColId, setEditStudyColId] = useState('');
+  const [editStudyMediumScope, setEditStudyMediumScope] = useState('');
   const [isSavingStudy, setIsSavingStudy] = useState(false);
+
+  // Detect entries that would become incompatible if the study's medium scope is changed
+  const incompatibleStudyEntries = useMemo(() => {
+    if (!editingStudyId || !editStudyMediumScope) return [];
+    return entries.filter(
+      (e) => e.studyId === editingStudyId && e.medium && e.medium.trim() !== editStudyMediumScope.trim()
+    );
+  }, [editingStudyId, editStudyMediumScope, entries]);
 
   const startEditCollection = (col: (typeof collections)[0]) => {
     setEditingColId(col.id);
@@ -242,18 +242,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     setEditColSubtitle(col.subtitle || '');
     setEditColDesc(col.description);
     setEditColPeriod(col.period);
-    setEditColMediumScope(col.mediumScope || '');
   };
 
   const handleSaveCollectionEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingColId || !editColTitle) return;
-    if (incompatibleEditEntries.length > 0) {
-      alert(
-        `Cannot save: ${incompatibleEditEntries.length} entries assigned to this collection have an incompatible medium. Please reassign or update those entries before changing medium scope.`
-      );
-      return;
-    }
     setIsSavingCol(true);
     try {
       await updateCollection(editingColId, {
@@ -261,7 +254,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         subtitle: editColSubtitle,
         description: editColDesc,
         period: editColPeriod,
-        mediumScope: editColMediumScope ? (editColMediumScope as any) : null,
       });
       setSuccessMessage(`Collection "${editColTitle}" updated and persisted!`);
       setEditingColId(null);
@@ -332,11 +324,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     setEditStudySubtitle(std.subtitle || '');
     setEditStudyDesc(std.description);
     setEditStudyColId(std.collectionId);
+    setEditStudyMediumScope(std.mediumScope || '');
   };
 
   const handleSaveStudyEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingStudyId || !editStudyTitle) return;
+    if (incompatibleStudyEntries.length > 0) {
+      alert(
+        `Cannot save: ${incompatibleStudyEntries.length} entries assigned to this study have an incompatible medium. Please reassign or update those entries before changing medium scope.`
+      );
+      return;
+    }
     setIsSavingStudy(true);
     try {
       await updateStudy(editingStudyId, {
@@ -344,6 +343,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         subtitle: editStudySubtitle,
         description: editStudyDesc,
         collectionId: editStudyColId,
+        mediumScope: editStudyMediumScope ? (editStudyMediumScope as any) : null,
       });
       setSuccessMessage(`Study "${editStudyTitle}" updated and persisted!`);
       setEditingStudyId(null);
@@ -434,12 +434,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       subtitle: newColSubtitle,
       description: newColDesc,
       period: newColPeriod,
-      mediumScope: newColMediumScope ? (newColMediumScope as any) : null,
     });
     setNewColTitle('');
     setNewColSubtitle('');
     setNewColDesc('');
-    setNewColMediumScope('');
     setSuccessMessage(`Collection "${newColTitle}" created!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
@@ -455,6 +453,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       title: newStdTitle,
       subtitle: newStdSubtitle,
       description: newStdDesc,
+      mediumScope: newStdMediumScope ? (newStdMediumScope as any) : null,
       createdDate: new Date().toISOString().slice(0, 10).replace(/-/g, '.'),
       threadIds: newStdThreads,
       order: studies.length + 1,
@@ -462,6 +461,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     setNewStdTitle('');
     setNewStdSubtitle('');
     setNewStdDesc('');
+    setNewStdMediumScope('');
     setSuccessMessage(`Study "${newStdTitle}" registered!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
@@ -1280,24 +1280,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                     />
                   </div>
                   <div>
-                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Medium Scope</label>
-                    <select
-                      value={newColMediumScope}
-                      onChange={(e) => setNewColMediumScope(e.target.value)}
-                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
-                    >
-                      <option value="">Cross-Medium</option>
-                      {INITIAL_ENTRY_MEDIUMS.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-[10px] text-[#8C8C82] mt-1 italic">
-                      Cross-medium collections may contain work from any Medium. A scoped collection forms a body of work within one Medium.
-                    </p>
-                  </div>
-                  <div>
                     <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
                     <textarea
                       rows={3}
@@ -1346,6 +1328,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                       placeholder="e.g. Vernacular Roof Typologies"
                       className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Medium Scope (Optional)</label>
+                    <select
+                      value={newStdMediumScope}
+                      onChange={(e) => setNewStdMediumScope(e.target.value)}
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB] text-[#141413]"
+                    >
+                      <option value="">(None / Cross-Medium Investigation)</option>
+                      {INITIAL_ENTRY_MEDIUMS.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-[#8C8C82] mt-1 italic">
+                      Cross-medium if unassigned. Scoped studies restrict entry assignments to that medium and appear in Laboratory.
+                    </p>
                   </div>
                   <div>
                     <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Study Description</label>
@@ -1429,56 +1429,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               />
                             </div>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
-                              <input
-                                type="text"
-                                value={editColPeriod}
-                                onChange={(e) => setEditColPeriod(e.target.value)}
-                                className="w-full p-2 bg-white border border-[#E5E3DB]"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Medium Scope</label>
-                              <select
-                                value={editColMediumScope}
-                                onChange={(e) => setEditColMediumScope(e.target.value)}
-                                className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413]"
-                              >
-                                <option value="">Cross-Medium</option>
-                                {INITIAL_ENTRY_MEDIUMS.map((m) => (
-                                  <option key={m} value={m}>
-                                    {m}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
+                          <div>
+                            <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
+                            <input
+                              type="text"
+                              value={editColPeriod}
+                              onChange={(e) => setEditColPeriod(e.target.value)}
+                              className="w-full p-2 bg-white border border-[#E5E3DB]"
+                            />
                           </div>
-                          <p className="text-[10px] text-[#8C8C82] italic -mt-1">
-                            Cross-medium collections may contain work from any Medium. A scoped collection forms a body of work within one Medium.
-                          </p>
-
-                          {incompatibleEditEntries.length > 0 && (
-                            <div className="p-3 bg-[#FFF5F5] border border-[#9E2A2B]/40 text-[#9E2A2B] text-xs font-mono-archival space-y-1">
-                              <span className="font-semibold block uppercase">
-                                ⚠ Incompatible Entries Warning ({incompatibleEditEntries.length})
-                              </span>
-                              <p>
-                                The following entries are currently assigned to this collection but have a different medium than "{editColMediumScope}":
-                              </p>
-                              <ul className="list-disc list-inside space-y-0.5 pt-1 text-[11px]">
-                                {incompatibleEditEntries.map((e) => (
-                                  <li key={e.id}>
-                                    [{e.entryNumber || 'Draft'}] <span className="font-medium text-[#141413]">"{e.title}"</span> — <span className="italic">{e.medium || 'No medium'}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                              <p className="pt-1 text-[10px] font-medium">
-                                Please reassign or update these entries before saving this medium scope.
-                              </p>
-                            </div>
-                          )}
 
                           <div>
                             <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
@@ -1509,7 +1468,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               </button>
                               <button
                                 type="submit"
-                                disabled={isSavingCol || incompatibleEditEntries.length > 0}
+                                disabled={isSavingCol}
                                 className="px-4 py-1.5 bg-[#9E2A2B] text-white font-semibold uppercase tracking-wider disabled:opacity-50"
                               >
                                 {isSavingCol ? 'Saving...' : 'Save Collection'}
@@ -1533,15 +1492,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                                 <span className="px-2 py-0.5 bg-[#141413] text-[#FBFBFA] font-semibold text-[10px] tracking-wider">
                                    ORDER #{index + 1}
                                 </span>
-                                {collection.mediumScope ? (
-                                  <span className="px-2 py-0.5 bg-[#EAE8E0] text-[#141413] font-semibold text-[10px] tracking-wider uppercase border border-[#D5D3CB]">
-                                    {collection.mediumScope}
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 bg-[#F4F3EE] text-[#6E6E66] font-semibold text-[10px] tracking-wider uppercase border border-[#E5E3DB]">
-                                    CROSS-MEDIUM
-                                  </span>
-                                )}
                                 <span className="font-semibold text-[#141413] text-sm">{collection.title}</span>
                                 <span>•</span>
                                 <span>{collection.period}</span>
@@ -1634,20 +1584,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                                       />
                                     </div>
                                   </div>
-                                  <div>
-                                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Parent Collection</label>
-                                    <select
-                                      value={editStudyColId}
-                                      onChange={(e) => setEditStudyColId(e.target.value)}
-                                      className="w-full p-2 bg-white border border-[#E5E3DB]"
-                                    >
-                                      {collections.map((c) => (
-                                        <option key={c.id} value={c.id}>
-                                          {c.title}
-                                        </option>
-                                      ))}
-                                    </select>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Parent Collection</label>
+                                      <select
+                                        value={editStudyColId}
+                                        onChange={(e) => setEditStudyColId(e.target.value)}
+                                        className="w-full p-2 bg-white border border-[#E5E3DB]"
+                                      >
+                                        {collections.map((c) => (
+                                          <option key={c.id} value={c.id}>
+                                            {c.title}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Medium Scope</label>
+                                      <select
+                                        value={editStudyMediumScope}
+                                        onChange={(e) => setEditStudyMediumScope(e.target.value)}
+                                        className="w-full p-2 bg-white border border-[#E5E3DB] text-[#141413]"
+                                      >
+                                        <option value="">Cross-Medium / Unrestricted</option>
+                                        {INITIAL_ENTRY_MEDIUMS.map((m) => (
+                                          <option key={m} value={m}>
+                                            {m}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
                                   </div>
+
+                                  {incompatibleStudyEntries.length > 0 && (
+                                    <div className="p-3 bg-[#FFF5F5] border border-[#9E2A2B]/40 text-[#9E2A2B] text-xs font-mono-archival space-y-1">
+                                      <span className="font-semibold block uppercase">
+                                        ⚠ Incompatible Entries Warning ({incompatibleStudyEntries.length})
+                                      </span>
+                                      <p>
+                                        The following entries are currently assigned to this study but have a different medium than "{editStudyMediumScope}":
+                                      </p>
+                                      <ul className="list-disc list-inside space-y-0.5 pt-1 text-[11px]">
+                                        {incompatibleStudyEntries.map((e) => (
+                                          <li key={e.id}>
+                                            [{e.entryNumber || 'Draft'}] <span className="font-medium text-[#141413]">"{e.title}"</span> — <span className="italic">{e.medium || 'No medium'}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                      <p className="pt-1 text-[10px] font-medium">
+                                        Please reassign or update these entries before saving this medium scope.
+                                      </p>
+                                    </div>
+                                  )}
+
                                   <div>
                                     <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
                                     <textarea
@@ -1667,8 +1656,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                                     </button>
                                     <button
                                       type="submit"
-                                      disabled={isSavingStudy}
-                                      className="px-4 py-1.5 bg-[#9E2A2B] text-white font-semibold uppercase tracking-wider"
+                                      disabled={isSavingStudy || incompatibleStudyEntries.length > 0}
+                                      className="px-4 py-1.5 bg-[#9E2A2B] text-white font-semibold uppercase tracking-wider disabled:opacity-50"
                                     >
                                       {isSavingStudy ? 'Saving...' : 'Save Study'}
                                     </button>
@@ -1677,8 +1666,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               ) : (
                                 <div key={study.id} className="p-3.5 flex items-center justify-between gap-4 hover:bg-[#FAF9F5]">
                                   <div className="space-y-0.5">
-                                    <div className="flex items-center gap-2 text-xs font-mono-archival">
+                                    <div className="flex items-center gap-2 text-xs font-mono-archival flex-wrap">
                                       <span className="font-medium text-[#141413]">{study.title}</span>
+                                      {study.mediumScope ? (
+                                        <span className="px-1.5 py-0.5 bg-[#EAE8E0] text-[#141413] text-[9px] uppercase tracking-wider font-mono-archival border border-[#D5D3CB]">
+                                          {study.mediumScope}
+                                        </span>
+                                      ) : null}
                                       <span className="text-[#8C8C82]">•</span>
                                       <span className="text-[#8C8C82]">{studyEntries.length} entries</span>
                                     </div>
@@ -1867,12 +1861,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                       {collectionPendingDelete.affectedEntriesCount} {collectionPendingDelete.affectedEntriesCount === 1 ? 'Entry' : 'Entries'}
                     </span>
                   </div>
-                  {collectionPendingDelete.collection.mediumScope && (
-                    <div className="flex justify-between">
-                      <span className="text-[#8C8C82]">Medium Scope:</span>
-                      <span className="font-medium text-[#9E2A2B] uppercase text-[10px]">{collectionPendingDelete.collection.mediumScope}</span>
-                    </div>
-                  )}
                 </div>
 
                 {/* Required Confirmation Notice */}

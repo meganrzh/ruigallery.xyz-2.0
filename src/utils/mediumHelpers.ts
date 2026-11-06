@@ -136,6 +136,16 @@ export function getEntryPreviewImage(entry: Entry): EntryPreviewImage | null {
           };
         }
       }
+      if (block.type === 'gallery' && Array.isArray(block.images) && block.images.length > 0) {
+        const first = block.images.find((img) => img && typeof img.url === 'string' && img.url.trim());
+        if (first) {
+          return {
+            url: first.url.trim(),
+            alt: first.alt || entry.title,
+            caption: first.caption,
+          };
+        }
+      }
     }
   }
 

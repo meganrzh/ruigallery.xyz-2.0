@@ -96,13 +96,13 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
       .sort((a, b) => compareDatesDesc(a.createdDate, b.createdDate));
   }, [allPublishedEntries, selectedMedium]);
 
-  // Collections scoped specifically to currently selected medium
-  const mediumScopedCollections = useMemo(() => {
+  // Studies scoped specifically to currently selected medium
+  const mediumScopedStudies = useMemo(() => {
     if (!selectedMedium) return [];
-    return collections
-      .filter((c) => c.mediumScope === selectedMedium)
+    return studies
+      .filter((s) => s.mediumScope === selectedMedium)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  }, [collections, selectedMedium]);
+  }, [studies, selectedMedium]);
 
   return (
     <div className="py-12 md:py-20 animate-fade-in">
@@ -356,32 +356,32 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                   </div>
                 </div>
 
-                {/* Medium-Scoped Collections (Series) - Collapsed entirely if none exist */}
-                {mediumScopedCollections.length > 0 && (
+                {/* Medium-Scoped Studies - Rendered only if studies scoped to this medium exist */}
+                {mediumScopedStudies.length > 0 && (
                   <div className="space-y-3 pb-6 border-b border-[#E5E3DB]">
                     <span className="text-[10px] font-mono-archival text-[#8C8C82] uppercase tracking-wider block font-medium">
-                      Series
+                      Studies
                     </span>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {mediumScopedCollections.map((col) => {
+                      {mediumScopedStudies.map((study) => {
                         const publishedWorksCount = allPublishedEntries.filter(
-                          (e) => e.collectionId === col.id
+                          (e) => e.studyId === study.id
                         ).length;
 
                         return (
                           <div
-                            key={col.id}
-                            onClick={() => onNavigate({ page: 'collection', slug: col.slug })}
+                            key={study.id}
+                            onClick={() => onNavigate({ page: 'study', slug: study.slug })}
                             className="group p-3.5 bg-[#FBFBFA] border border-[#E5E3DB] hover:border-[#141413] transition-colors cursor-pointer text-left flex flex-col justify-between"
                           >
                             <div className="space-y-1">
                               <h4 className="font-serif text-sm font-medium text-[#141413] group-hover:text-[#9E2A2B] transition-colors leading-snug">
-                                {col.title}
+                                {study.title}
                               </h4>
-                              {col.subtitle && (
+                              {study.subtitle && (
                                 <p className="font-serif text-xs text-[#5C5C54] italic line-clamp-2 leading-relaxed">
-                                  {col.subtitle}
+                                  {study.subtitle}
                                 </p>
                               )}
                             </div>
@@ -534,15 +534,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                     className="p-5 bg-[#F4F3EE] border border-[#E5E3DB] space-y-3 hover:border-[#141413] transition-colors"
                   >
                     <div className="flex items-center justify-between text-xs font-mono-archival text-[#8C8C82]">
-                      <div className="flex items-center space-x-1.5">
-                        <span>{collection.period}</span>
-                        {collection.mediumScope && (
-                          <>
-                            <span>•</span>
-                            <span className="text-[#9E2A2B] font-medium uppercase text-[10px]">{collection.mediumScope}</span>
-                          </>
-                        )}
-                      </div>
+                      <span>{collection.period}</span>
                       <span className="text-[#141413] font-medium">{totalEntries} ENTRIES</span>
                     </div>
 

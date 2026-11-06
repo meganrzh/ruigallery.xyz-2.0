@@ -25,6 +25,7 @@ import {
   Link as LinkIcon,
   Loader2,
   X,
+  Images as ImagesIcon,
 } from 'lucide-react';
 import {
   Entry,
@@ -40,6 +41,7 @@ import { FormattedTextarea } from '../utils/textFormatting';
 import { formatFullDate } from '../utils/dateFormatting';
 import { api } from '../services/api';
 import { ImageUploaderField } from './ImageUploaderField';
+import { GalleryBlockEditor } from './GalleryBlockEditor';
 
 interface EntryEditorProps {
   initialEntry?: Entry | null;
@@ -101,31 +103,24 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
     return '';
   }, [mediumChoice, customMedium]);
 
-  // Current assigned collection object
+  // Current assigned collection object (Collections are always cross-medium)
   const assignedCollection = useMemo(() => {
     if (!collectionId) return null;
     return collections.find((c) => c.id === collectionId) || null;
   }, [collections, collectionId]);
 
-  // Check if assigned collection's medium scope conflicts with entry's medium
-  const isCollectionIncompatible = useMemo(() => {
-    if (!assignedCollection || !assignedCollection.mediumScope) return false;
-    // An assigned collection with a medium scope requires the entry to have that exact medium
-    return !effectiveMedium || assignedCollection.mediumScope !== effectiveMedium;
-  }, [assignedCollection, effectiveMedium]);
+  // Current assigned study object
+  const assignedStudy = useMemo(() => {
+    if (!studyId) return null;
+    return studies.find((s) => s.id === studyId) || null;
+  }, [studies, studyId]);
 
-  // Eligible collections to show in dropdown:
-  // 1. Cross-medium (mediumScope is null/undefined)
-  // 2. Scoped to the entry's current medium (mediumScope === effectiveMedium)
-  // 3. Current collection (if already assigned and incompatible, show with clear warning label so user can see it)
-  const eligibleCollections = useMemo(() => {
-    return collections.filter((c) => {
-      if (!c.mediumScope) return true;
-      if (effectiveMedium && c.mediumScope === effectiveMedium) return true;
-      if (c.id === collectionId) return true;
-      return false;
-    });
-  }, [collections, effectiveMedium, collectionId]);
+  // Check if assigned study's medium scope conflicts with entry's medium
+  const isStudyIncompatible = useMemo(() => {
+    if (!assignedStudy || !assignedStudy.mediumScope) return false;
+    // An assigned study with a medium scope requires the entry to have that exact medium
+    return !effectiveMedium || assignedStudy.mediumScope !== effectiveMedium;
+  }, [assignedStudy, effectiveMedium]);
 
   // Dates & Location
   const [createdDate, setCreatedDate] = useState(
@@ -229,9 +224,9 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
       return;
     }
 
-    if (isCollectionIncompatible && assignedCollection) {
+    if (isStudyIncompatible && assignedStudy) {
       setFormError(
-        `Cannot save: This Entry's medium ("${effectiveMedium || 'None'}") is incompatible with its assigned collection ("${assignedCollection.title}", scoped strictly to "${assignedCollection.mediumScope}"). Please select a compatible collection or clear the collection assignment.`
+        `Cannot save: This Entry's medium ("${effectiveMedium || 'None'}") is incompatible with its assigned study ("${assignedStudy.title}", scoped strictly to "${assignedStudy.mediumScope}"). Please select a compatible study or clear the study assignment.`
       );
       return;
     }
@@ -297,10 +292,20 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
     }
   };
 
-  // Filter studies by selected collection if collection is selected
-  const availableStudies = collectionId
-    ? studies.filter((s) => s.collectionId === collectionId)
-    : studies;
+  // Filter studies by selected collection and eligible medium scope:
+  // 1. Must belong to selected collection (if one is chosen)
+  // 2. Either cross-medium (no mediumScope) OR scoped to entry's effective medium OR currently assigned to this entry
+  const availableStudies = useMemo(() => {
+    const list = collectionId
+      ? studies.filter((s) => s.collectionId === collectionId)
+      : studies;
+    return list.filter((s) => {
+      if (!s.mediumScope) return true;
+      if (effectiveMedium && s.mediumScope === effectiveMedium) return true;
+      if (s.id === studyId) return true;
+      return false;
+    });
+  }, [studies, collectionId, effectiveMedium, studyId]);
 
   return (
     <div className="space-y-8 animate-fade-in font-mono-archival text-xs">
@@ -553,13 +558,13 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                 />
               )}
 
-              {isCollectionIncompatible && assignedCollection && (
+              {isStudyIncompatible && assignedStudy && (
                 <div className="p-2.5 bg-[#FFF5F5] border border-[#9E2A2B]/40 text-[#9E2A2B] text-xs font-mono-archival flex items-start space-x-2 mt-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
-                    <span className="font-semibold uppercase block">Collection Mismatch:</span>
+                    <span className="font-semibold uppercase block">Study Mismatch:</span>
                     <p className="text-[11px] leading-tight">
-                      The assigned Collection ("{assignedCollection.title}") requires Medium "{assignedCollection.mediumScope}". Please reassign the Collection in Section 2 or clear it before saving.
+                      The assigned Study ("{assignedStudy.title}") requires Medium "{assignedStudy.mediumScope}". Please reassign the Study in Section 2 or clear it before saving.
                     </p>
                   </div>
                 </div>
@@ -653,45 +658,15 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                     setStudyId('');
                   }
                 }}
-                className={`w-full p-2 bg-[#F4F3EE] border text-[#141413] ${
-                  isCollectionIncompatible ? 'border-[#9E2A2B] bg-[#FFF5F5]' : 'border-[#E5E3DB]'
-                }`}
+                className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
               >
                 <option value="">(Independent / No Collection)</option>
-                {eligibleCollections.map((c) => {
-                  const isThisIncompatible = Boolean(c.mediumScope && effectiveMedium && c.mediumScope !== effectiveMedium);
-                  const scopeLabel = c.mediumScope ? c.mediumScope : 'Cross-Medium';
-                  return (
-                    <option key={c.id} value={c.id}>
-                      {c.title} — {scopeLabel}{isThisIncompatible ? ' [INCOMPATIBLE WITH MEDIUM]' : ''}
-                    </option>
-                  );
-                })}
+                {collections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title}
+                  </option>
+                ))}
               </select>
-
-              {isCollectionIncompatible && assignedCollection && (
-                <div className="p-3 bg-[#FFF5F5] border border-[#9E2A2B]/40 text-[#9E2A2B] text-xs font-mono-archival space-y-1.5 mt-2">
-                  <div className="flex items-center space-x-1.5 font-semibold uppercase">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>Incompatible Collection Assignment</span>
-                  </div>
-                  <p className="leading-relaxed text-[11px]">
-                    This Entry is assigned to <strong className="text-[#141413]">"{assignedCollection.title}"</strong>, which is scoped strictly to <strong className="text-[#141413]">{assignedCollection.mediumScope}</strong>. Because this Entry's Medium is {effectiveMedium ? <strong className="text-[#141413]">"{effectiveMedium}"</strong> : 'unassigned'}, you must choose a compatible Collection or clear the assignment before saving.
-                  </p>
-                  <div className="pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCollectionId('');
-                        setStudyId('');
-                      }}
-                      className="underline font-semibold hover:text-[#141413] text-[11px]"
-                    >
-                      Clear Collection Assignment
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Study */}
@@ -701,16 +676,55 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
               </label>
               <select
                 value={studyId}
-                onChange={(e) => setStudyId(e.target.value)}
-                className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
+                onChange={(e) => {
+                  const nextStudyId = e.target.value;
+                  setStudyId(nextStudyId);
+                  if (nextStudyId && !collectionId) {
+                    const found = studies.find((s) => s.id === nextStudyId);
+                    if (found?.collectionId) {
+                      setCollectionId(found.collectionId);
+                    }
+                  }
+                }}
+                className={`w-full p-2 bg-[#F4F3EE] border text-[#141413] ${
+                  isStudyIncompatible ? 'border-[#9E2A2B] bg-[#FFF5F5]' : 'border-[#E5E3DB]'
+                }`}
               >
                 <option value="">(Independent / No Study)</option>
-                {availableStudies.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title}
-                  </option>
-                ))}
+                {availableStudies.map((s) => {
+                  const isThisIncompatible = Boolean(
+                    s.mediumScope && effectiveMedium && s.mediumScope !== effectiveMedium
+                  );
+                  const scopeLabel = s.mediumScope ? s.mediumScope : 'Cross-Medium';
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {s.title} — {scopeLabel}
+                      {isThisIncompatible ? ' [INCOMPATIBLE WITH MEDIUM]' : ''}
+                    </option>
+                  );
+                })}
               </select>
+
+              {isStudyIncompatible && assignedStudy && (
+                <div className="p-3 bg-[#FFF5F5] border border-[#9E2A2B]/40 text-[#9E2A2B] text-xs font-mono-archival space-y-1.5 mt-2">
+                  <div className="flex items-center space-x-1.5 font-semibold uppercase">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Incompatible Study Assignment</span>
+                  </div>
+                  <p className="leading-relaxed text-[11px]">
+                    This Entry is assigned to <strong className="text-[#141413]">"{assignedStudy.title}"</strong>, which is scoped strictly to <strong className="text-[#141413]">{assignedStudy.mediumScope}</strong>. Because this Entry's Medium is {effectiveMedium ? <strong className="text-[#141413]">"{effectiveMedium}"</strong> : 'unassigned'}, you must choose a compatible Study or clear the assignment before saving.
+                  </p>
+                  <div className="pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setStudyId('')}
+                      className="underline font-semibold hover:text-[#141413] text-[11px]"
+                    >
+                      Clear Study Assignment
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Location / Coordinate */}
@@ -925,6 +939,20 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() =>
+                  addBlock({
+                    type: 'gallery',
+                    images: [],
+                    display: 'grid',
+                  })
+                }
+                className="px-2.5 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1.5 transition-colors font-medium text-[#141413]"
+              >
+                <ImagesIcon className="w-3 h-3 text-[#9E2A2B]" />
+                <span>+ Photo Gallery</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => addBlock({ type: 'pullquote', quote: '', attribution: '' })}
                 className="px-2.5 py-1 bg-[#F4F3EE] border border-[#E5E3DB] hover:border-[#141413] flex items-center space-x-1.5 transition-colors font-medium text-[#141413]"
               >
@@ -1048,6 +1076,13 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                       />
                     </div>
                   </div>
+                )}
+
+                {block.type === 'gallery' && (
+                  <GalleryBlockEditor
+                    block={block}
+                    onChange={(updated) => updateBlockAt(idx, updated)}
+                  />
                 )}
 
                 {block.type === 'fragment' && (

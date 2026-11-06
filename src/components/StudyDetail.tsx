@@ -61,6 +61,12 @@ export const StudyDetail: React.FC<StudyDetailProps> = ({ slug, onNavigate }) =>
               <span className="text-[#9E2A2B] font-semibold uppercase">STUDY</span>
               <span>•</span>
               <span>ORDER #{study.order}</span>
+              {study.mediumScope && (
+                <>
+                  <span>•</span>
+                  <span className="uppercase text-[#141413]">{study.mediumScope}</span>
+                </>
+              )}
               {collection && (
                 <>
                   <span>•</span>

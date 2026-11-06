@@ -260,8 +260,8 @@ export async function handleAdminMutationRoutes(
     const now = new Date().toISOString();
 
     await env.DB.prepare(
-      `INSERT INTO collections (id, slug, title, subtitle, description, period, location_context, medium_scope, order_index, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO collections (id, slug, title, subtitle, description, period, location_context, order_index, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       id,
       slug,
@@ -270,7 +270,6 @@ export async function handleAdminMutationRoutes(
       body.description || null,
       body.period || null,
       body.location_context || null,
-      body.medium_scope ? body.medium_scope.trim() : null,
       order_index,
       now,
       now
@@ -302,24 +301,6 @@ export async function handleAdminMutationRoutes(
         return errorResponse('Collection title cannot be empty', 400);
       }
 
-      // Medium Scope Safety: verify no incompatible entries belong to this collection
-      if (body.medium_scope !== undefined && body.medium_scope !== null && body.medium_scope.trim() !== '') {
-        const targetScope = body.medium_scope.trim();
-        const incompatibleEntries = await env.DB.prepare(
-          'SELECT id, entry_number, title, medium FROM entries WHERE collection_id = ? AND medium IS NOT NULL AND medium != ?'
-        ).bind(id, targetScope).all<{ id: string; entry_number: string; title: string; medium: string }>();
-
-        if (incompatibleEntries.results && incompatibleEntries.results.length > 0) {
-          const list = incompatibleEntries.results
-            .map((e) => `[${e.entry_number || 'N/A'}] "${e.title}" (${e.medium})`)
-            .join(', ');
-          return errorResponse(
-            `Cannot change Medium Scope to "${targetScope}": Collection contains ${incompatibleEntries.results.length} incompatible entries: ${list}. Please reassign or update these entries before changing scope.`,
-            400
-          );
-        }
-      }
-
       const now = new Date().toISOString();
 
       const result = await env.DB.prepare(
@@ -330,7 +311,6 @@ export async function handleAdminMutationRoutes(
              period = COALESCE(?, period),
              location_context = COALESCE(?, location_context),
              order_index = COALESCE(?, order_index),
-             medium_scope = CASE WHEN ? = 1 THEN ? ELSE medium_scope END,
              updated_at = ?
          WHERE id = ?`
       ).bind(
@@ -340,8 +320,6 @@ export async function handleAdminMutationRoutes(
         body.period ?? null,
         body.location_context ?? null,
         body.order_index ?? null,
-        body.medium_scope !== undefined ? 1 : 0,
-        body.medium_scope ? body.medium_scope.trim() : null,
         now,
         id
       ).run();
@@ -461,11 +439,12 @@ export async function handleAdminMutationRoutes(
       ).bind(collection_id).first<{ max_order: number | null }>();
       order_index = (maxRow?.max_order ?? 0) + 1;
     }
+    const medium_scope = body.medium_scope?.trim() || null;
     const now = new Date().toISOString();
 
     await env.DB.prepare(
-      `INSERT INTO studies (id, slug, collection_id, title, subtitle, description, archival_date, order_index, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO studies (id, slug, collection_id, title, subtitle, description, archival_date, medium_scope, order_index, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       id,
       slug,
@@ -474,6 +453,7 @@ export async function handleAdminMutationRoutes(
       body.subtitle || null,
       body.description || null,
       body.archival_date || null,
+      medium_scope,
       order_index,
       now,
       now
@@ -498,13 +478,22 @@ export async function handleAdminMutationRoutes(
     const id = decodeURIComponent(studyMatch[1]);
 
     if (method === 'PUT') {
+      const existingStudy = await env.DB.prepare(
+        'SELECT * FROM studies WHERE id = ?'
+      ).bind(id).first<StudyRecord>();
+
+      if (!existingStudy) {
+        return errorResponse('Study not found', 404);
+      }
+
       const body = (await request.json()) as Partial<StudyRecord>;
-      const title = body.title !== undefined ? body.title.trim() : null;
+      const title = body.title !== undefined ? body.title.trim() : existingStudy.title;
 
       if (body.title !== undefined && !title) {
         return errorResponse('Study title cannot be empty', 400);
       }
 
+      let collectionId = existingStudy.collection_id;
       if (body.collection_id) {
         const collExists = await env.DB.prepare(
           'SELECT id FROM collections WHERE id = ?'
@@ -512,34 +501,61 @@ export async function handleAdminMutationRoutes(
         if (!collExists) {
           return errorResponse(`Target collection '${body.collection_id}' does not exist`, 400);
         }
+        collectionId = body.collection_id;
+      }
+
+      let mediumScopeToSet = existingStudy.medium_scope ?? null;
+      if (body.medium_scope !== undefined) {
+        const targetScope = body.medium_scope ? body.medium_scope.trim() : null;
+        if (targetScope) {
+          const incompatible = await env.DB.prepare(
+            'SELECT id, entry_number, title, medium FROM entries WHERE study_id = ? AND medium IS NOT NULL AND medium != ?'
+          ).bind(id, targetScope).all<{ id: string; entry_number: string; title: string; medium: string }>();
+
+          if (incompatible.results && incompatible.results.length > 0) {
+            const entryList = incompatible.results
+              .slice(0, 3)
+              .map((e) => `${e.entry_number || e.id} ("${e.title}", medium: ${e.medium})`)
+              .join(', ');
+            const moreCount =
+              incompatible.results.length > 3 ? ` and ${incompatible.results.length - 3} more` : '';
+            return errorResponse(
+              `Cannot change Study Medium Scope to "${targetScope}": Study contains ${incompatible.results.length} incompatible entries [${entryList}${moreCount}]. Reassign or update those entries before restricting this study's medium.`,
+              400
+            );
+          }
+        }
+        mediumScopeToSet = targetScope;
       }
 
       const now = new Date().toISOString();
+      const updatedSubtitle = body.subtitle !== undefined ? (body.subtitle?.trim() || null) : existingStudy.subtitle;
+      const updatedDesc = body.description !== undefined ? (body.description || null) : existingStudy.description;
+      const updatedArchivalDate = body.archival_date !== undefined ? (body.archival_date?.trim() || null) : existingStudy.archival_date;
+      const updatedOrder = typeof body.order_index === 'number' ? body.order_index : existingStudy.order_index;
 
-      const result = await env.DB.prepare(
+      await env.DB.prepare(
         `UPDATE studies
-         SET collection_id = COALESCE(?, collection_id),
-             title = COALESCE(?, title),
-             subtitle = COALESCE(?, subtitle),
-             description = COALESCE(?, description),
-             archival_date = COALESCE(?, archival_date),
-             order_index = COALESCE(?, order_index),
+         SET collection_id = ?,
+             title = ?,
+             subtitle = ?,
+             description = ?,
+             archival_date = ?,
+             medium_scope = ?,
+             order_index = ?,
              updated_at = ?
          WHERE id = ?`
       ).bind(
-        body.collection_id || null,
+        collectionId,
         title,
-        body.subtitle ?? null,
-        body.description ?? null,
-        body.archival_date ?? null,
-        body.order_index ?? null,
+        updatedSubtitle,
+        updatedDesc,
+        updatedArchivalDate,
+        mediumScopeToSet,
+        updatedOrder,
         now,
         id
       ).run();
-
-      if (result.meta?.changes === 0) {
-        return errorResponse('Study not found', 404);
-      }
 
       const { results } = await env.DB.prepare(
         'SELECT * FROM studies WHERE id = ?'
@@ -780,17 +796,10 @@ export async function handleAdminMutationRoutes(
     let collectionId = body.collectionId?.trim() || null;
     if (collectionId) {
       const col = await env.DB.prepare(
-        'SELECT id, medium_scope, title FROM collections WHERE id = ?'
-      ).bind(collectionId).first<{ id: string; medium_scope: string | null; title: string }>();
+        'SELECT id, title FROM collections WHERE id = ?'
+      ).bind(collectionId).first<{ id: string; title: string }>();
       if (!col) {
         return errorResponse(`Referenced collection '${collectionId}' does not exist`, 400);
-      }
-      const entryMedium = body.medium?.trim() || null;
-      if (col.medium_scope && entryMedium && col.medium_scope !== entryMedium) {
-        return errorResponse(
-          `Cannot assign collection '${col.title}' (scoped strictly to '${col.medium_scope}') to an Entry with medium '${entryMedium}'`,
-          400
-        );
       }
     }
 
@@ -798,8 +807,8 @@ export async function handleAdminMutationRoutes(
     let studyCollectionId = '';
     if (studyId) {
       const study = await env.DB.prepare(
-        'SELECT id, collection_id FROM studies WHERE id = ?'
-      ).bind(studyId).first<{ id: string; collection_id: string }>();
+        'SELECT id, collection_id, medium_scope, title FROM studies WHERE id = ?'
+      ).bind(studyId).first<{ id: string; collection_id: string; medium_scope: string | null; title: string }>();
 
       if (!study) {
         return errorResponse(`Referenced study '${studyId}' does not exist`, 400);
@@ -807,6 +816,18 @@ export async function handleAdminMutationRoutes(
       studyCollectionId = study.collection_id;
       if (!collectionId) {
         collectionId = study.collection_id;
+      } else if (collectionId !== study.collection_id) {
+        return errorResponse(
+          `Study '${study.title}' belongs to collection '${study.collection_id}', not '${collectionId}'`,
+          400
+        );
+      }
+      const entryMedium = body.medium?.trim() || null;
+      if (study.medium_scope && entryMedium && study.medium_scope !== entryMedium) {
+        return errorResponse(
+          `Cannot assign study '${study.title}' (scoped strictly to '${study.medium_scope}') to an Entry with medium '${entryMedium}'`,
+          400
+        );
       }
     }
 
@@ -1122,14 +1143,29 @@ export async function handleAdminMutationRoutes(
 
       if (collectionId) {
         const col = await env.DB.prepare(
-          'SELECT id, medium_scope, title FROM collections WHERE id = ?'
-        ).bind(collectionId).first<{ id: string; medium_scope: string | null; title: string }>();
+          'SELECT id, title FROM collections WHERE id = ?'
+        ).bind(collectionId).first<{ id: string; title: string }>();
         if (!col) {
           return errorResponse(`Referenced collection '${collectionId}' does not exist`, 400);
         }
-        if (col.medium_scope && medium && col.medium_scope !== medium) {
+      }
+
+      if (studyId) {
+        const study = await env.DB.prepare(
+          'SELECT id, collection_id, medium_scope, title FROM studies WHERE id = ?'
+        ).bind(studyId).first<{ id: string; collection_id: string; medium_scope: string | null; title: string }>();
+        if (!study) {
+          return errorResponse(`Referenced study '${studyId}' does not exist`, 400);
+        }
+        if (collectionId && collectionId !== study.collection_id) {
           return errorResponse(
-            `Cannot assign collection '${col.title}' (scoped strictly to '${col.medium_scope}') to an Entry with medium '${medium}'`,
+            `Study '${study.title}' belongs to collection '${study.collection_id}', not '${collectionId}'`,
+            400
+          );
+        }
+        if (study.medium_scope && medium && study.medium_scope !== medium) {
+          return errorResponse(
+            `Cannot assign study '${study.title}' (scoped strictly to '${study.medium_scope}') to an Entry with medium '${medium}'`,
             400
           );
         }

@@ -2,6 +2,7 @@ import React from 'react';
 import { EntryBlock } from '../types';
 import { Quote, FileText, Bookmark, ExternalLink } from 'lucide-react';
 import { renderFormattedText } from '../utils/textFormatting';
+import { GalleryRenderer } from './GalleryRenderer';
 
 interface EntryBodyRendererProps {
   blocks: EntryBlock[];
@@ -70,6 +71,13 @@ export const EntryBodyRenderer: React.FC<EntryBodyRendererProps> = ({ blocks }) 
                     </p>
                   )}
                 </div>
+              </div>
+            );
+
+          case 'gallery':
+            return (
+              <div key={idx} className="my-10">
+                <GalleryRenderer images={block.images || []} display={block.display || 'grid'} />
               </div>
             );
 
