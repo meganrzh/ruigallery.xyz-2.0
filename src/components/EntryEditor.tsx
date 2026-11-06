@@ -194,20 +194,24 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
   };
 
   const moveBlock = (index: number, direction: 'up' | 'down') => {
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === blocks.length - 1) return;
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    const copy = [...blocks];
-    const item = copy[index];
-    copy[index] = copy[targetIndex];
-    copy[targetIndex] = item;
-    setBlocks(copy);
+    setBlocks((prev) => {
+      if (direction === 'up' && index === 0) return prev;
+      if (direction === 'down' && index === prev.length - 1) return prev;
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      const copy = [...prev];
+      const item = copy[index];
+      copy[index] = copy[targetIndex];
+      copy[targetIndex] = item;
+      return copy;
+    });
   };
 
   const updateBlockAt = (index: number, updated: EntryBlock) => {
-    const copy = [...blocks];
-    copy[index] = updated;
-    setBlocks(copy);
+    setBlocks((prev) => {
+      const copy = [...prev];
+      copy[index] = updated;
+      return copy;
+    });
   };
 
   // Save handler with explicit draft / published target

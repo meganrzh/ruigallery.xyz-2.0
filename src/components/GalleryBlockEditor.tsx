@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Upload,
   Plus,
@@ -24,11 +24,15 @@ export interface GalleryBlockEditorProps {
 
 interface QueueItem {
   id: string;
+  batchId: number;
+  batchOrder: number;
   file: File;
   name: string;
   size: number;
   status: 'pending' | 'uploading' | 'completed' | 'error';
   error?: string;
+  uploadedImage?: GalleryImage;
+  absorbed?: boolean;
 }
 
 const MAX_CONCURRENT_UPLOADS = 3;
@@ -57,6 +61,74 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // ---------------------------------------------------------------------------
+  // Refs to eliminate stale closure races during concurrent asynchronous uploads
+  // ---------------------------------------------------------------------------
+  const blockRef = useRef(block);
+  blockRef.current = block;
+
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const baseImagesRef = useRef<GalleryImage[]>(block.images || []);
+  const queueRef = useRef<QueueItem[]>([]);
+  const batchCounterRef = useRef(0);
+  const imageOverridesRef = useRef<Map<string, Partial<GalleryImage>>>(new Map());
+
+  // Synchronize baseImagesRef when block.images changes from parent when queue is idle
+  useEffect(() => {
+    const hasActive = queueRef.current.some(
+      (q) => q.status === 'pending' || q.status === 'uploading'
+    );
+    if (!hasActive && queueRef.current.length === 0) {
+      baseImagesRef.current = block.images || [];
+    }
+  }, [block.images]);
+
+  // ---------------------------------------------------------------------------
+  // Deterministic Image Synchronization
+  // ---------------------------------------------------------------------------
+  const getCurrentMergedImages = useCallback((): GalleryImage[] => {
+    // Collect all unabsorbed completed items from queue sorted deterministically:
+    // batchId ASC, then batchOrder ASC (matching selection order)
+    const completedFromQueue = queueRef.current
+      .filter((q) => q.status === 'completed' && q.uploadedImage && !q.absorbed)
+      .sort((a, b) => {
+        if (a.batchId !== b.batchId) return a.batchId - b.batchId;
+        return a.batchOrder - b.batchOrder;
+      })
+      .map((q) => {
+        const override = imageOverridesRef.current.get(q.uploadedImage!.url);
+        return override ? { ...q.uploadedImage!, ...override } : q.uploadedImage!;
+      });
+
+    const baseWithOverrides = baseImagesRef.current.map((img) => {
+      const override = imageOverridesRef.current.get(img.url);
+      return override ? { ...img, ...override } : img;
+    });
+
+    return [...baseWithOverrides, ...completedFromQueue];
+  }, []);
+
+  const syncImagesToParent = useCallback(() => {
+    const merged = getCurrentMergedImages();
+    onChangeRef.current({
+      ...blockRef.current,
+      images: merged,
+    });
+  }, [getCurrentMergedImages]);
+
+  const consolidateCompletedIntoBase = useCallback(() => {
+    const merged = getCurrentMergedImages();
+    baseImagesRef.current = merged;
+    for (const item of queueRef.current) {
+      if (item.status === 'completed') {
+        item.absorbed = true;
+      }
+    }
+    syncImagesToParent();
+  }, [getCurrentMergedImages, syncImagesToParent]);
+
+  // ---------------------------------------------------------------------------
   // Presentation Mode Toggle
   // ---------------------------------------------------------------------------
   const setDisplayMode = (newDisplay: GalleryDisplay) => {
@@ -67,24 +139,57 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
   // Photo Array Mutations
   // ---------------------------------------------------------------------------
   const updateImageAt = (index: number, updates: Partial<GalleryImage>) => {
-    const copy = [...images];
-    copy[index] = { ...copy[index], ...updates };
-    onChange({ ...block, images: copy });
+    const currentImages = getCurrentMergedImages();
+    if (index < 0 || index >= currentImages.length) return;
+    const target = currentImages[index];
+    const newOverrides = new Map(imageOverridesRef.current);
+    const existingOverride = newOverrides.get(target.url);
+    const mergedOverride: Partial<GalleryImage> = Object.assign({}, existingOverride, updates);
+    newOverrides.set(target.url, mergedOverride);
+    imageOverridesRef.current = newOverrides;
+
+    // Also update directly in baseImagesRef if present
+    const baseIdx = baseImagesRef.current.findIndex((img) => img.url === target.url);
+    if (baseIdx !== -1) {
+      baseImagesRef.current[baseIdx] = { ...baseImagesRef.current[baseIdx], ...updates };
+    }
+    syncImagesToParent();
   };
 
   const removeImageAt = (index: number) => {
-    const copy = images.filter((_, i) => i !== index);
-    onChange({ ...block, images: copy });
+    const currentImages = getCurrentMergedImages();
+    if (index < 0 || index >= currentImages.length) return;
+    const targetUrl = currentImages[index].url;
+
+    baseImagesRef.current = baseImagesRef.current.filter((img) => img.url !== targetUrl);
+    queueRef.current = queueRef.current.filter((q) => q.uploadedImage?.url !== targetUrl);
+    setUploadQueue([...queueRef.current]);
+    syncImagesToParent();
   };
 
   const moveImage = (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= images.length || toIndex >= images.length) {
+    const currentImages = getCurrentMergedImages();
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= currentImages.length ||
+      toIndex >= currentImages.length
+    ) {
       return;
     }
-    const copy = [...images];
+    const copy = [...currentImages];
     const [moved] = copy.splice(fromIndex, 1);
     copy.splice(toIndex, 0, moved);
-    onChange({ ...block, images: copy });
+
+    // Consolidate manual order into baseImagesRef and mark completed queue items absorbed
+    baseImagesRef.current = copy;
+    for (const item of queueRef.current) {
+      if (item.status === 'completed') {
+        item.absorbed = true;
+      }
+    }
+    syncImagesToParent();
   };
 
   const addManualImage = () => {
@@ -94,7 +199,13 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
       caption: manualCaption.trim() || undefined,
       alt: manualAlt.trim() || undefined,
     };
-    onChange({ ...block, images: [...images, newImage] });
+    baseImagesRef.current = [...getCurrentMergedImages(), newImage];
+    for (const item of queueRef.current) {
+      if (item.status === 'completed') {
+        item.absorbed = true;
+      }
+    }
+    syncImagesToParent();
     setManualUrl('');
     setManualCaption('');
     setManualAlt('');
@@ -104,80 +215,93 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
   // ---------------------------------------------------------------------------
   // Batch Upload Queue with Controlled Concurrency (Limit = 3)
   // ---------------------------------------------------------------------------
-  const processQueue = useCallback(
-    async (currentQueue: QueueItem[]) => {
-      // Find items currently uploading
-      const inFlight = currentQueue.filter((item) => item.status === 'uploading');
-      if (inFlight.length >= MAX_CONCURRENT_UPLOADS) {
-        return;
-      }
+  const pumpQueue = useCallback(() => {
+    // Count active in-flight uploads in queueRef
+    const inFlight = queueRef.current.filter((item) => item.status === 'uploading');
+    if (inFlight.length >= MAX_CONCURRENT_UPLOADS) {
+      return;
+    }
 
-      // Find pending items to start
-      const availableSlots = MAX_CONCURRENT_UPLOADS - inFlight.length;
-      const pendingItems = currentQueue.filter((item) => item.status === 'pending').slice(0, availableSlots);
+    const availableSlots = MAX_CONCURRENT_UPLOADS - inFlight.length;
+    const pendingItems = queueRef.current
+      .filter((item) => item.status === 'pending')
+      .slice(0, availableSlots);
 
-      if (pendingItems.length === 0) {
-        return;
-      }
-
-      // Mark selected pending items as uploading
-      const itemIdsToStart = new Set(pendingItems.map((i) => i.id));
-      setUploadQueue((prev) =>
-        prev.map((item) =>
-          itemIdsToStart.has(item.id) ? { ...item, status: 'uploading' } : item
-        )
+    if (pendingItems.length === 0) {
+      // Check if all items finished (none pending or uploading)
+      const hasActive = queueRef.current.some(
+        (q) => q.status === 'pending' || q.status === 'uploading'
       );
-      setActiveUploadsCount((prev) => prev + pendingItems.length);
+      if (!hasActive && queueRef.current.length > 0) {
+        consolidateCompletedIntoBase();
+      }
+      return;
+    }
 
-      // Launch uploads concurrently up to concurrency limit
-      pendingItems.forEach(async (item) => {
+    // Mark selected pending items as uploading
+    for (const item of pendingItems) {
+      item.status = 'uploading';
+    }
+    setUploadQueue([...queueRef.current]);
+    setActiveUploadsCount(queueRef.current.filter((q) => q.status === 'uploading').length);
+
+    // Launch uploads concurrently up to concurrency limit
+    for (const item of pendingItems) {
+      (async () => {
         try {
           const res = await api.uploadMedia(item.file);
-          // 1. Append successfully uploaded image to gallery
-          const newImg: GalleryImage = {
+          item.status = 'completed';
+          item.uploadedImage = {
             url: res.url,
             caption: '',
             alt: item.name.replace(/\.[^/.]+$/, ''),
           };
-          onChange({
-            ...block,
-            images: [...(block.images || []), newImg],
-          });
-
-          // 2. Mark queue item as completed
-          setUploadQueue((prev) =>
-            prev.map((q) => (q.id === item.id ? { ...q, status: 'completed' } : q))
-          );
+          syncImagesToParent();
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : 'Upload failed';
-          setUploadQueue((prev) =>
-            prev.map((q) => (q.id === item.id ? { ...q, status: 'error', error: errMsg } : q))
-          );
+          item.status = 'error';
+          item.error = errMsg;
         } finally {
-          setActiveUploadsCount((prev) => Math.max(0, prev - 1));
-          // Trigger next in queue
-          setUploadQueue((latest) => {
-            setTimeout(() => processQueue(latest), 10);
-            return latest;
-          });
+          const stillActive = queueRef.current.filter((q) => q.status === 'uploading').length;
+          setUploadQueue([...queueRef.current]);
+          setActiveUploadsCount(stillActive);
+          pumpQueue();
         }
-      });
-    },
-    [block, onChange]
-  );
+      })();
+    }
+  }, [consolidateCompletedIntoBase, syncImagesToParent]);
 
   const enqueueFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
 
+    // If all previous queue items finished, consolidate into baseImagesRef before new batch
+    const hasActive = queueRef.current.some(
+      (q) => q.status === 'pending' || q.status === 'uploading'
+    );
+    if (!hasActive && queueRef.current.length > 0) {
+      consolidateCompletedIntoBase();
+    }
+
+    const batchId = ++batchCounterRef.current;
+
     const newItems: QueueItem[] = fileArray.map((file, idx) => {
-      const id = `upload-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+      const id = `upload-${Date.now()}-${batchId}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
       const lower = file.name.toLowerCase();
+      const isHeic =
+        lower.endsWith('.heic') ||
+        lower.endsWith('.heif') ||
+        file.type === 'image/heic' ||
+        file.type === 'image/heif' ||
+        file.type === 'image/heic-sequence' ||
+        file.type === 'image/heif-sequence';
 
       // Per-file pre-validation
       if (file.size > MAX_FILE_SIZE_BYTES) {
         return {
           id,
+          batchId,
+          batchOrder: idx,
           file,
           name: file.name,
           size: file.size,
@@ -186,19 +310,23 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
         };
       }
 
-      if (lower.endsWith('.heic') || lower.endsWith('.heif')) {
+      if (isHeic) {
         return {
           id,
+          batchId,
+          batchOrder: idx,
           file,
           name: file.name,
           size: file.size,
           status: 'error',
-          error: 'HEIC format not supported. Convert to JPEG, PNG, or WebP.',
+          error: 'HEIC format is not supported by browsers. Convert to JPEG, PNG, or WebP on iOS before uploading.',
         };
       }
 
       return {
         id,
+        batchId,
+        batchOrder: idx,
         file,
         name: file.name,
         size: file.size,
@@ -206,60 +334,67 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
       };
     });
 
-    setUploadQueue((prev) => {
-      const updated = [...prev, ...newItems];
-      setTimeout(() => processQueue(updated), 10);
-      return updated;
-    });
+    queueRef.current = [...queueRef.current, ...newItems];
+    setUploadQueue([...queueRef.current]);
+    setTimeout(() => pumpQueue(), 0);
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      enqueueFiles(e.target.files);
-    }
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    // Copy into detached Array before resetting value to prevent WebKit/Safari FileList invalidation
+    const files: File[] = Array.from(fileList);
     e.target.value = '';
+    enqueueFiles(files);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      enqueueFiles(e.dataTransfer.files);
+      const files: File[] = Array.from(e.dataTransfer.files);
+      enqueueFiles(files);
     }
   };
 
   const retryFailedUpload = (id: string) => {
-    setUploadQueue((prev) => {
-      const updated = prev.map((item) =>
-        item.id === id ? { ...item, status: 'pending' as const, error: undefined } : item
-      );
-      setTimeout(() => processQueue(updated), 10);
-      return updated;
-    });
+    const item = queueRef.current.find((q) => q.id === id);
+    if (item) {
+      item.status = 'pending';
+      item.error = undefined;
+      setUploadQueue([...queueRef.current]);
+      pumpQueue();
+    }
   };
 
   const dismissQueueItem = (id: string) => {
-    setUploadQueue((prev) => prev.filter((item) => item.id !== id));
+    queueRef.current = queueRef.current.filter((item) => item.id !== id);
+    setUploadQueue([...queueRef.current]);
   };
 
   const clearCompletedQueue = () => {
-    setUploadQueue((prev) => prev.filter((item) => item.status === 'uploading' || item.status === 'pending'));
+    queueRef.current = queueRef.current.filter(
+      (item) => item.status === 'uploading' || item.status === 'pending'
+    );
+    setUploadQueue([...queueRef.current]);
   };
 
   // Queue summary counts
   const totalQueueCount = uploadQueue.length;
   const completedQueueCount = uploadQueue.filter((q) => q.status === 'completed').length;
   const errorQueueCount = uploadQueue.filter((q) => q.status === 'error').length;
-  const activeQueueCount = uploadQueue.filter((q) => q.status === 'uploading' || q.status === 'pending').length;
+  const activeQueueCount = uploadQueue.filter(
+    (q) => q.status === 'uploading' || q.status === 'pending'
+  );
 
   return (
     <div className="space-y-4 font-mono-archival text-xs">
-      {/* Hidden File Input (supports multiple file selection) */}
+      {/* Hidden File Input (supports multiple file selection & iOS JPEG/PNG/WebP/GIF/AVIF) */}
       <input
         type="file"
         ref={fileInputRef}
         multiple
-        accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+        accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/avif"
         onChange={handleFileInputChange}
         className="hidden"
       />
