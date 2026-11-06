@@ -36,7 +36,8 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
   }, [collections]);
 
   // Derive medium cards from canonical taxonomy so all 6 canonical mediums exist
-  // as part of RUI's architecture, plus any custom mediums with published entries
+  // as part of RUI's architecture, plus any custom mediums with published entries.
+  // Dynamically ordered by published Entry count descending (with canonical taxonomy tiebreaker).
   const availableMediums = useMemo(() => {
     const counts: Record<string, number> = {};
     allPublishedEntries.forEach((entry) => {
@@ -53,7 +54,13 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
 
     const allNames = [...canonicalNames, ...customNames];
 
-    return allNames.map((name) => {
+    // Canonical taxonomy index lookup for secondary tie-breaker (do not alphabetize ties)
+    const canonicalIndexMap = new Map<string, number>();
+    canonicalNames.forEach((name, idx) => {
+      canonicalIndexMap.set(name, idx);
+    });
+
+    const mediumList = allNames.map((name) => {
       const meta = getMediumDefinition(name);
       const latestWorks = allPublishedEntries
         .filter((e) => e.medium?.trim() === name)
@@ -67,6 +74,17 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
         tag: meta.tag,
         latestWorks,
       };
+    });
+
+    // Primary: published Entry count descending
+    // Secondary / Tiebreaker: existing canonical taxonomy order from CANONICAL_MEDIUMS
+    return mediumList.sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      const aIndex = canonicalIndexMap.has(a.name) ? canonicalIndexMap.get(a.name)! : 999;
+      const bIndex = canonicalIndexMap.has(b.name) ? canonicalIndexMap.get(b.name)! : 999;
+      return aIndex - bIndex;
     });
   }, [allPublishedEntries]);
 
