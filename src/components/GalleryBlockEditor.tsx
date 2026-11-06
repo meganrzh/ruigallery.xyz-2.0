@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Upload,
   Plus,
@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Link as LinkIcon,
   X,
-  RefreshCw,
   GripVertical,
 } from 'lucide-react';
 import { GalleryImage, GalleryDisplay, EntryBlock } from '../types';
@@ -22,17 +21,14 @@ export interface GalleryBlockEditorProps {
   onChange: (updated: Extract<EntryBlock, { type: 'gallery' }>) => void;
 }
 
-interface QueueItem {
+export interface BatchItem {
   id: string;
-  batchId: number;
-  batchOrder: number;
+  index: number;
   file: File;
   name: string;
   size: number;
   status: 'pending' | 'uploading' | 'completed' | 'error';
   error?: string;
-  uploadedImage?: GalleryImage;
-  absorbed?: boolean;
 }
 
 const MAX_CONCURRENT_UPLOADS = 3;
@@ -52,144 +48,58 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
   const [manualCaption, setManualCaption] = useState('');
   const [manualAlt, setManualAlt] = useState('');
 
-  // Upload Queue State
-  const [uploadQueue, setUploadQueue] = useState<QueueItem[]>([]);
-  const [activeUploadsCount, setActiveUploadsCount] = useState(0);
+  // Batch Upload State (TEMPORARY UI ONLY - NEVER MUTATES block.images DURING UPLOADS)
+  const [isUploading, setIsUploading] = useState(false);
+  const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
+  const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0 });
+
+  // Keep fresh references to block and onChange for batch completion
+  const latestBlockRef = useRef(block);
+  latestBlockRef.current = block;
+
+  const latestOnChangeRef = useRef(onChange);
+  latestOnChangeRef.current = onChange;
 
   // Drag and drop reordering state
   const [draggedPhotoIndex, setDraggedPhotoIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // ---------------------------------------------------------------------------
-  // Refs to eliminate stale closure races during concurrent asynchronous uploads
-  // ---------------------------------------------------------------------------
-  const blockRef = useRef(block);
-  blockRef.current = block;
-
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-
-  const baseImagesRef = useRef<GalleryImage[]>(block.images || []);
-  const queueRef = useRef<QueueItem[]>([]);
-  const batchCounterRef = useRef(0);
-  const imageOverridesRef = useRef<Map<string, Partial<GalleryImage>>>(new Map());
-
-  // Synchronize baseImagesRef when block.images changes from parent when queue is idle
-  useEffect(() => {
-    const hasActive = queueRef.current.some(
-      (q) => q.status === 'pending' || q.status === 'uploading'
-    );
-    if (!hasActive && queueRef.current.length === 0) {
-      baseImagesRef.current = block.images || [];
-    }
-  }, [block.images]);
-
-  // ---------------------------------------------------------------------------
-  // Deterministic Image Synchronization
-  // ---------------------------------------------------------------------------
-  const getCurrentMergedImages = useCallback((): GalleryImage[] => {
-    // Collect all unabsorbed completed items from queue sorted deterministically:
-    // batchId ASC, then batchOrder ASC (matching selection order)
-    const completedFromQueue = queueRef.current
-      .filter((q) => q.status === 'completed' && q.uploadedImage && !q.absorbed)
-      .sort((a, b) => {
-        if (a.batchId !== b.batchId) return a.batchId - b.batchId;
-        return a.batchOrder - b.batchOrder;
-      })
-      .map((q) => {
-        const override = imageOverridesRef.current.get(q.uploadedImage!.url);
-        return override ? { ...q.uploadedImage!, ...override } : q.uploadedImage!;
-      });
-
-    const baseWithOverrides = baseImagesRef.current.map((img) => {
-      const override = imageOverridesRef.current.get(img.url);
-      return override ? { ...img, ...override } : img;
-    });
-
-    return [...baseWithOverrides, ...completedFromQueue];
-  }, []);
-
-  const syncImagesToParent = useCallback(() => {
-    const merged = getCurrentMergedImages();
-    onChangeRef.current({
-      ...blockRef.current,
-      images: merged,
-    });
-  }, [getCurrentMergedImages]);
-
-  const consolidateCompletedIntoBase = useCallback(() => {
-    const merged = getCurrentMergedImages();
-    baseImagesRef.current = merged;
-    for (const item of queueRef.current) {
-      if (item.status === 'completed') {
-        item.absorbed = true;
-      }
-    }
-    syncImagesToParent();
-  }, [getCurrentMergedImages, syncImagesToParent]);
-
-  // ---------------------------------------------------------------------------
   // Presentation Mode Toggle
   // ---------------------------------------------------------------------------
   const setDisplayMode = (newDisplay: GalleryDisplay) => {
-    onChange({ ...block, display: newDisplay });
+    latestOnChangeRef.current({ ...latestBlockRef.current, display: newDisplay });
   };
 
   // ---------------------------------------------------------------------------
-  // Photo Array Mutations
+  // Photo Array Mutations (Committed gallery content operations)
   // ---------------------------------------------------------------------------
   const updateImageAt = (index: number, updates: Partial<GalleryImage>) => {
-    const currentImages = getCurrentMergedImages();
-    if (index < 0 || index >= currentImages.length) return;
-    const target = currentImages[index];
-    const newOverrides = new Map(imageOverridesRef.current);
-    const existingOverride = newOverrides.get(target.url);
-    const mergedOverride: Partial<GalleryImage> = Object.assign({}, existingOverride, updates);
-    newOverrides.set(target.url, mergedOverride);
-    imageOverridesRef.current = newOverrides;
-
-    // Also update directly in baseImagesRef if present
-    const baseIdx = baseImagesRef.current.findIndex((img) => img.url === target.url);
-    if (baseIdx !== -1) {
-      baseImagesRef.current[baseIdx] = { ...baseImagesRef.current[baseIdx], ...updates };
-    }
-    syncImagesToParent();
+    const copy = [...(latestBlockRef.current.images || [])];
+    if (index < 0 || index >= copy.length) return;
+    copy[index] = { ...copy[index], ...updates };
+    latestOnChangeRef.current({ ...latestBlockRef.current, images: copy });
   };
 
   const removeImageAt = (index: number) => {
-    const currentImages = getCurrentMergedImages();
-    if (index < 0 || index >= currentImages.length) return;
-    const targetUrl = currentImages[index].url;
-
-    baseImagesRef.current = baseImagesRef.current.filter((img) => img.url !== targetUrl);
-    queueRef.current = queueRef.current.filter((q) => q.uploadedImage?.url !== targetUrl);
-    setUploadQueue([...queueRef.current]);
-    syncImagesToParent();
+    const copy = (latestBlockRef.current.images || []).filter((_, i) => i !== index);
+    latestOnChangeRef.current({ ...latestBlockRef.current, images: copy });
   };
 
   const moveImage = (fromIndex: number, toIndex: number) => {
-    const currentImages = getCurrentMergedImages();
+    const current = [...(latestBlockRef.current.images || [])];
     if (
       fromIndex === toIndex ||
       fromIndex < 0 ||
       toIndex < 0 ||
-      fromIndex >= currentImages.length ||
-      toIndex >= currentImages.length
+      fromIndex >= current.length ||
+      toIndex >= current.length
     ) {
       return;
     }
-    const copy = [...currentImages];
-    const [moved] = copy.splice(fromIndex, 1);
-    copy.splice(toIndex, 0, moved);
-
-    // Consolidate manual order into baseImagesRef and mark completed queue items absorbed
-    baseImagesRef.current = copy;
-    for (const item of queueRef.current) {
-      if (item.status === 'completed') {
-        item.absorbed = true;
-      }
-    }
-    syncImagesToParent();
+    const [moved] = current.splice(fromIndex, 1);
+    current.splice(toIndex, 0, moved);
+    latestOnChangeRef.current({ ...latestBlockRef.current, images: current });
   };
 
   const addManualImage = () => {
@@ -199,13 +109,11 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
       caption: manualCaption.trim() || undefined,
       alt: manualAlt.trim() || undefined,
     };
-    baseImagesRef.current = [...getCurrentMergedImages(), newImage];
-    for (const item of queueRef.current) {
-      if (item.status === 'completed') {
-        item.absorbed = true;
-      }
-    }
-    syncImagesToParent();
+    const current = latestBlockRef.current.images || [];
+    latestOnChangeRef.current({
+      ...latestBlockRef.current,
+      images: [...current, newImage],
+    });
     setManualUrl('');
     setManualCaption('');
     setManualAlt('');
@@ -213,80 +121,17 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
   };
 
   // ---------------------------------------------------------------------------
-  // Batch Upload Queue with Controlled Concurrency (Limit = 3)
+  // BATCH PHOTO UPLOAD: ONE SELECTION = ONE BATCH
+  // Uploads with max 3 concurrency, stores results indexed by selection position.
+  // Appends the ENTIRE completed batch to Gallery in ONE parent onChange update.
   // ---------------------------------------------------------------------------
-  const pumpQueue = useCallback(() => {
-    // Count active in-flight uploads in queueRef
-    const inFlight = queueRef.current.filter((item) => item.status === 'uploading');
-    if (inFlight.length >= MAX_CONCURRENT_UPLOADS) {
-      return;
-    }
+  const startBatchUpload = async (files: File[]) => {
+    if (files.length === 0 || isUploading) return;
 
-    const availableSlots = MAX_CONCURRENT_UPLOADS - inFlight.length;
-    const pendingItems = queueRef.current
-      .filter((item) => item.status === 'pending')
-      .slice(0, availableSlots);
+    setIsUploading(true);
 
-    if (pendingItems.length === 0) {
-      // Check if all items finished (none pending or uploading)
-      const hasActive = queueRef.current.some(
-        (q) => q.status === 'pending' || q.status === 'uploading'
-      );
-      if (!hasActive && queueRef.current.length > 0) {
-        consolidateCompletedIntoBase();
-      }
-      return;
-    }
-
-    // Mark selected pending items as uploading
-    for (const item of pendingItems) {
-      item.status = 'uploading';
-    }
-    setUploadQueue([...queueRef.current]);
-    setActiveUploadsCount(queueRef.current.filter((q) => q.status === 'uploading').length);
-
-    // Launch uploads concurrently up to concurrency limit
-    for (const item of pendingItems) {
-      (async () => {
-        try {
-          const res = await api.uploadMedia(item.file);
-          item.status = 'completed';
-          item.uploadedImage = {
-            url: res.url,
-            caption: '',
-            alt: item.name.replace(/\.[^/.]+$/, ''),
-          };
-          syncImagesToParent();
-        } catch (err: unknown) {
-          const errMsg = err instanceof Error ? err.message : 'Upload failed';
-          item.status = 'error';
-          item.error = errMsg;
-        } finally {
-          const stillActive = queueRef.current.filter((q) => q.status === 'uploading').length;
-          setUploadQueue([...queueRef.current]);
-          setActiveUploadsCount(stillActive);
-          pumpQueue();
-        }
-      })();
-    }
-  }, [consolidateCompletedIntoBase, syncImagesToParent]);
-
-  const enqueueFiles = (files: FileList | File[]) => {
-    const fileArray = Array.from(files);
-    if (fileArray.length === 0) return;
-
-    // If all previous queue items finished, consolidate into baseImagesRef before new batch
-    const hasActive = queueRef.current.some(
-      (q) => q.status === 'pending' || q.status === 'uploading'
-    );
-    if (!hasActive && queueRef.current.length > 0) {
-      consolidateCompletedIntoBase();
-    }
-
-    const batchId = ++batchCounterRef.current;
-
-    const newItems: QueueItem[] = fileArray.map((file, idx) => {
-      const id = `upload-${Date.now()}-${batchId}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+    // 1. Build initial queue items preserving original selection position
+    const initialItems: BatchItem[] = files.map((file, idx) => {
       const lower = file.name.toLowerCase();
       const isHeic =
         lower.endsWith('.heic') ||
@@ -296,12 +141,10 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
         file.type === 'image/heic-sequence' ||
         file.type === 'image/heif-sequence';
 
-      // Per-file pre-validation
       if (file.size > MAX_FILE_SIZE_BYTES) {
         return {
-          id,
-          batchId,
-          batchOrder: idx,
+          id: `batch-${Date.now()}-${idx}`,
+          index: idx,
           file,
           name: file.name,
           size: file.size,
@@ -312,9 +155,8 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
 
       if (isHeic) {
         return {
-          id,
-          batchId,
-          batchOrder: idx,
+          id: `batch-${Date.now()}-${idx}`,
+          index: idx,
           file,
           name: file.name,
           size: file.size,
@@ -324,9 +166,8 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
       }
 
       return {
-        id,
-        batchId,
-        batchOrder: idx,
+        id: `batch-${Date.now()}-${idx}`,
+        index: idx,
         file,
         name: file.name,
         size: file.size,
@@ -334,9 +175,71 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
       };
     });
 
-    queueRef.current = [...queueRef.current, ...newItems];
-    setUploadQueue([...queueRef.current]);
-    setTimeout(() => pumpQueue(), 0);
+    setBatchQueue(initialItems);
+    setBatchProgress({ completed: 0, total: initialItems.length });
+
+    // 2. Results array indexed by selection position
+    const results: (GalleryImage | null)[] = new Array(files.length).fill(null);
+
+    // 3. Worker pool for controlled concurrency (max 3)
+    const validItemsToUpload = initialItems.filter((i) => i.status === 'pending');
+    let nextPointer = 0;
+    let completedCount = initialItems.filter((i) => i.status === 'error').length;
+
+    const runWorker = async () => {
+      while (nextPointer < validItemsToUpload.length) {
+        const item = validItemsToUpload[nextPointer++];
+
+        // Update item status in UI queue
+        setBatchQueue((prev) =>
+          prev.map((q) => (q.id === item.id ? { ...q, status: 'uploading' } : q))
+        );
+
+        try {
+          const res = await api.uploadMedia(item.file);
+          // Store result at exact original selection index
+          results[item.index] = {
+            url: res.url,
+            caption: '',
+            alt: item.name.replace(/\.[^/.]+$/, ''),
+          };
+
+          setBatchQueue((prev) =>
+            prev.map((q) => (q.id === item.id ? { ...q, status: 'completed' } : q))
+          );
+        } catch (err: unknown) {
+          const errMsg = err instanceof Error ? err.message : 'Upload failed';
+          results[item.index] = null;
+          setBatchQueue((prev) =>
+            prev.map((q) => (q.id === item.id ? { ...q, status: 'error', error: errMsg } : q))
+          );
+        } finally {
+          completedCount++;
+          setBatchProgress({ completed: completedCount, total: initialItems.length });
+        }
+      }
+    };
+
+    const workerCount = Math.min(MAX_CONCURRENT_UPLOADS, validItemsToUpload.length);
+    if (workerCount > 0) {
+      const workers = Array.from({ length: workerCount }, () => runWorker());
+      await Promise.all(workers);
+    }
+
+    // 4. BATCH COMPLETE: Filter successful images preserving selection order
+    const successfulImages = results.filter((img): img is GalleryImage => img !== null);
+
+    // 5. ONE SINGLE PARENT STATE UPDATE committing the entire batch
+    if (successfulImages.length > 0) {
+      const currentImages = latestBlockRef.current.images || [];
+      const updatedImages = [...currentImages, ...successfulImages];
+      latestOnChangeRef.current({
+        ...latestBlockRef.current,
+        images: updatedImages,
+      });
+    }
+
+    setIsUploading(false);
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -345,47 +248,32 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
     // Copy into detached Array before resetting value to prevent WebKit/Safari FileList invalidation
     const files: File[] = Array.from(fileList);
     e.target.value = '';
-    enqueueFiles(files);
+    startBatchUpload(files);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    if (isUploading) return;
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const files: File[] = Array.from(e.dataTransfer.files);
-      enqueueFiles(files);
+      startBatchUpload(files);
     }
   };
 
-  const retryFailedUpload = (id: string) => {
-    const item = queueRef.current.find((q) => q.id === id);
-    if (item) {
-      item.status = 'pending';
-      item.error = undefined;
-      setUploadQueue([...queueRef.current]);
-      pumpQueue();
+  const dismissBatchQueue = () => {
+    if (!isUploading) {
+      setBatchQueue([]);
     }
-  };
-
-  const dismissQueueItem = (id: string) => {
-    queueRef.current = queueRef.current.filter((item) => item.id !== id);
-    setUploadQueue([...queueRef.current]);
-  };
-
-  const clearCompletedQueue = () => {
-    queueRef.current = queueRef.current.filter(
-      (item) => item.status === 'uploading' || item.status === 'pending'
-    );
-    setUploadQueue([...queueRef.current]);
   };
 
   // Queue summary counts
-  const totalQueueCount = uploadQueue.length;
-  const completedQueueCount = uploadQueue.filter((q) => q.status === 'completed').length;
-  const errorQueueCount = uploadQueue.filter((q) => q.status === 'error').length;
-  const activeQueueCount = uploadQueue.filter(
+  const totalQueueCount = batchQueue.length;
+  const completedQueueCount = batchQueue.filter((q) => q.status === 'completed').length;
+  const errorQueueCount = batchQueue.filter((q) => q.status === 'error').length;
+  const pendingOrUploadingCount = batchQueue.filter(
     (q) => q.status === 'uploading' || q.status === 'pending'
-  );
+  ).length;
 
   return (
     <div className="space-y-4 font-mono-archival text-xs">
@@ -396,6 +284,7 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
         multiple
         accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/avif"
         onChange={handleFileInputChange}
+        disabled={isUploading}
         className="hidden"
       />
 
@@ -439,11 +328,21 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
           </span>
           <button
             type="button"
+            disabled={isUploading}
             onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-1 bg-[#141413] text-[#FBFBFA] hover:bg-[#2C2C28] flex items-center space-x-1.5 transition-colors"
+            className="px-3 py-1 bg-[#141413] text-[#FBFBFA] hover:bg-[#2C2C28] disabled:opacity-40 disabled:pointer-events-none flex items-center space-x-1.5 transition-colors"
           >
-            <Upload className="w-3 h-3" />
-            <span>Add Photos</span>
+            {isUploading ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin text-[#9E2A2B]" />
+                <span>Uploading ({batchProgress.completed}/{batchProgress.total})...</span>
+              </>
+            ) : (
+              <>
+                <Upload className="w-3 h-3" />
+                <span>Add Photos</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -452,35 +351,45 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
       <div
         onDragOver={(e) => {
           e.preventDefault();
-          setIsDragging(true);
+          if (!isUploading) setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         className={`p-6 border-2 border-dashed text-center transition-colors ${
-          isDragging
+          isUploading
+            ? 'border-[#E5E3DB] bg-[#F4F3EE] opacity-60 cursor-not-allowed'
+            : isDragging
             ? 'border-[#9E2A2B] bg-[#9E2A2B]/5'
             : 'border-[#D5D3CB] bg-[#FBFBFA] hover:border-[#141413]'
         }`}
       >
         <Upload className="w-6 h-6 mx-auto mb-2 text-[#8C8C82]" />
-        <p className="text-sm font-medium text-[#141413]">
-          Drag and drop multiple photos here, or{' '}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="underline text-[#9E2A2B] hover:text-[#141413]"
-          >
-            browse your files
-          </button>
-        </p>
+        {isUploading ? (
+          <p className="text-sm font-medium text-[#141413]">
+            Uploading batch in progress ({batchProgress.completed} of {batchProgress.total} completed)...
+          </p>
+        ) : (
+          <p className="text-sm font-medium text-[#141413]">
+            Drag and drop multiple photos here, or{' '}
+            <button
+              type="button"
+              disabled={isUploading}
+              onClick={() => fileInputRef.current?.click()}
+              className="underline text-[#9E2A2B] hover:text-[#141413] disabled:opacity-40"
+            >
+              browse your files
+            </button>
+          </p>
+        )}
         <p className="text-[11px] text-[#8C8C82] mt-1">
-          Open-ended batch uploads are processed automatically in a controlled 3-stream queue. JPEG, PNG, WebP, GIF, AVIF (max 10 MB per image).
+          Batch uploads are processed with 3 concurrent streams and added atomically. JPEG, PNG, WebP, GIF, AVIF (max 10 MB per image).
         </p>
         <div className="mt-3">
           <button
             type="button"
+            disabled={isUploading}
             onClick={() => setShowAddUrlModal(!showAddUrlModal)}
-            className="text-[11px] text-[#6E6E66] hover:text-[#141413] inline-flex items-center space-x-1 underline"
+            className="text-[11px] text-[#6E6E66] hover:text-[#141413] inline-flex items-center space-x-1 underline disabled:opacity-40"
           >
             <LinkIcon className="w-3 h-3" />
             <span>{showAddUrlModal ? 'Hide manual URL input' : 'Add photo by image URL'}</span>
@@ -530,35 +439,35 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
         </div>
       )}
 
-      {/* Active Upload Queue Status Indicator */}
+      {/* Temporary Upload Queue / Progress Bar (Separated from Gallery content) */}
       {totalQueueCount > 0 && (
         <div className="p-3 bg-[#FBFBFA] border border-[#E5E3DB] space-y-2">
           <div className="flex items-center justify-between text-xs font-mono-archival">
             <div className="flex items-center space-x-2">
-              {activeQueueCount > 0 && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#9E2A2B]" />}
+              {isUploading && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#9E2A2B]" />}
               <span className="font-semibold text-[#141413]">
-                {activeQueueCount > 0
-                  ? `Uploading Queue: ${completedQueueCount} of ${totalQueueCount} completed (${activeUploadsCount} active concurrent)`
+                {isUploading
+                  ? `Uploading Batch: ${batchProgress.completed} of ${batchProgress.total} completed (3 streams)`
                   : `Batch Upload Complete: ${completedQueueCount} added${errorQueueCount > 0 ? `, ${errorQueueCount} failed` : ''}`}
               </span>
             </div>
-            {activeQueueCount === 0 && (
+            {!isUploading && (
               <button
                 type="button"
-                onClick={clearCompletedQueue}
+                onClick={dismissBatchQueue}
                 className="text-[11px] text-[#8C8C82] hover:text-[#141413] underline"
               >
-                Dismiss Queue
+                Dismiss
               </button>
             )}
           </div>
 
-          {/* Simple Progress Bar */}
+          {/* Progress Bar */}
           <div className="w-full bg-[#E5E3DB] h-1.5 overflow-hidden">
             <div
               className="bg-[#9E2A2B] h-full transition-all duration-300"
               style={{
-                width: `${totalQueueCount > 0 ? (completedQueueCount / totalQueueCount) * 100 : 0}%`,
+                width: `${totalQueueCount > 0 ? (batchProgress.completed / totalQueueCount) * 100 : 0}%`,
               }}
             />
           </div>
@@ -566,7 +475,7 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
           {/* Failed Items List */}
           {errorQueueCount > 0 && (
             <div className="space-y-1.5 pt-1">
-              {uploadQueue
+              {batchQueue
                 .filter((q) => q.status === 'error')
                 .map((failed) => (
                   <div
@@ -578,25 +487,6 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
                       <span className="font-medium truncate max-w-xs">{failed.name}</span>
                       <span className="text-red-600 text-[10px]">({failed.error})</span>
                     </div>
-                    <div className="flex items-center space-x-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => retryFailedUpload(failed.id)}
-                        className="px-2 py-0.5 bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 flex items-center space-x-1"
-                        title="Retry upload"
-                      >
-                        <RefreshCw className="w-2.5 h-2.5" />
-                        <span>Retry</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => dismissQueueItem(failed.id)}
-                        className="p-1 hover:text-red-950"
-                        title="Dismiss"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
                   </div>
                 ))}
             </div>
@@ -604,7 +494,7 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
         </div>
       )}
 
-      {/* Gallery Thumbnail Grid / Editor */}
+      {/* Gallery Thumbnail Cards (Committed Gallery Content) */}
       {images.length === 0 ? (
         <div className="py-8 text-center text-[#8C8C82] border border-[#E5E3DB] bg-[#FBFBFA]">
           No photographs in this gallery yet. Click &quot;Add Photos&quot; or drop image files above.
