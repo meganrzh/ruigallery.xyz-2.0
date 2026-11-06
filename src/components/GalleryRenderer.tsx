@@ -85,18 +85,34 @@ export const GalleryRenderer: React.FC<GalleryRendererProps> = ({
         className={`space-y-3 focus:outline-none focus:ring-1 focus:ring-[#141413]/30 ${className}`}
         aria-label="Photographic sequence. Use left and right arrow keys to navigate."
       >
-        {/* Single uncropped photograph display */}
-        <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-3 sm:p-6 flex items-center justify-center min-h-[260px] sm:min-h-[440px] max-h-[76vh] overflow-hidden">
-          <img
-            key={active.url}
-            src={active.url}
-            alt={active.alt || `Photograph ${currentIndex + 1} of ${validImages.length}`}
-            referrerPolicy="no-referrer"
-            className="w-auto max-w-full h-auto max-h-[70vh] object-contain mx-auto select-none"
-          />
+        {/* Fixed Responsive Viewing Frame (4:3 aspect ratio) */}
+        <div className="border border-[#E5E3DB] bg-[#F4F3EE] w-full aspect-[4/3] max-h-[72vh] relative overflow-hidden flex items-center justify-center select-none">
+          {active.crop ? (
+            <div className="w-full h-full overflow-hidden flex items-center justify-center relative">
+              <img
+                key={active.url}
+                src={active.url}
+                alt={active.alt || `Photograph ${currentIndex + 1} of ${validImages.length}`}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover select-none pointer-events-none"
+                style={{
+                  transform: `translate(${active.crop.x}%, ${active.crop.y}%) scale(${active.crop.zoom})`,
+                  transformOrigin: 'center center',
+                }}
+              />
+            </div>
+          ) : (
+            <img
+              key={active.url}
+              src={active.url}
+              alt={active.alt || `Photograph ${currentIndex + 1} of ${validImages.length}`}
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-contain p-2 sm:p-4 select-none pointer-events-none"
+            />
+          )}
         </div>
 
-        {/* Subdued Control & Caption Bar */}
+        {/* Subdued Control & Caption Bar (Stable Fixed Placement Below Viewport) */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 pt-1 border-t border-[#EFEFEA]">
           <div className="flex items-center space-x-2 shrink-0">
             <button
@@ -119,7 +135,7 @@ export const GalleryRenderer: React.FC<GalleryRendererProps> = ({
             >
               <ChevronRight className="w-4 h-4" />
             </button>
-            <span className="font-mono-archival text-xs text-[#8C8C82] tracking-wider pl-1.5 select-none">
+            <span className="font-mono-archival text-xs text-[#8C8C82] tracking-wider pl-1.5 select-none min-w-[50px]">
               {currentIndex + 1} / {validImages.length}
             </span>
           </div>

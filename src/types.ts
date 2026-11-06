@@ -31,11 +31,18 @@ export interface Study {
 
 export type RuiRevision = 'REV 00' | 'REV 01' | 'REV 02' | 'REV 03' | string;
 
+export interface GalleryImageCrop {
+  zoom: number; // Zoom scale factor: 1.0 (100%) to 3.0 (300%)
+  x: number;    // Horizontal offset percentage from center
+  y: number;    // Vertical offset percentage from center
+}
+
 export interface GalleryImage {
   url: string;
   caption?: string;
   alt?: string;
   scanInfo?: string;
+  crop?: GalleryImageCrop;
 }
 
 export type GalleryDisplay = 'grid' | 'slideshow';

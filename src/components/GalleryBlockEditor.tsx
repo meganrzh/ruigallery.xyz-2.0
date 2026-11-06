@@ -12,8 +12,9 @@ import {
   Link as LinkIcon,
   X,
   GripVertical,
+  Crop,
 } from 'lucide-react';
-import { GalleryImage, GalleryDisplay, EntryBlock } from '../types';
+import { GalleryImage, GalleryDisplay, EntryBlock, GalleryImageCrop } from '../types';
 import { api } from '../services/api';
 
 export interface GalleryBlockEditorProps {
@@ -52,6 +53,16 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
   const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0 });
+
+  // Presentation Crop Modal State
+  const [cropModalIndex, setCropModalIndex] = useState<number | null>(null);
+  const [tempCrop, setTempCrop] = useState<GalleryImageCrop | null>(null);
+
+  // Drag interaction refs for Crop Modal
+  const cropFrameRef = useRef<HTMLDivElement | null>(null);
+  const isDraggingCropRef = useRef(false);
+  const dragStartPosRef = useRef({ x: 0, y: 0 });
+  const initialCropOffsetRef = useRef({ x: 0, y: 0 });
 
   // Keep fresh references to block and onChange for batch completion
   const latestBlockRef = useRef(block);
@@ -118,6 +129,104 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
     setManualCaption('');
     setManualAlt('');
     setShowAddUrlModal(false);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Presentation Crop Modal Handlers
+  // ---------------------------------------------------------------------------
+  const openCropModal = (index: number) => {
+    const target = images[index];
+    if (!target) return;
+    setCropModalIndex(index);
+    setTempCrop(target.crop ? { ...target.crop } : { zoom: 1.0, x: 0, y: 0 });
+  };
+
+  const closeCropModal = () => {
+    setCropModalIndex(null);
+    setTempCrop(null);
+  };
+
+  const saveCropModal = () => {
+    if (cropModalIndex === null) return;
+    if (tempCrop === null) {
+      // Natural / Uncropped
+      updateImageAt(cropModalIndex, { crop: undefined });
+    } else {
+      updateImageAt(cropModalIndex, {
+        crop: {
+          zoom: Number(tempCrop.zoom.toFixed(2)),
+          x: Math.round(tempCrop.x),
+          y: Math.round(tempCrop.y),
+        },
+      });
+    }
+    closeCropModal();
+  };
+
+  const startCropDrag = (clientX: number, clientY: number) => {
+    isDraggingCropRef.current = true;
+    dragStartPosRef.current = { x: clientX, y: clientY };
+    initialCropOffsetRef.current = {
+      x: tempCrop?.x ?? 0,
+      y: tempCrop?.y ?? 0,
+    };
+  };
+
+  const moveCropDrag = (clientX: number, clientY: number) => {
+    if (!isDraggingCropRef.current || !cropFrameRef.current) return;
+    const rect = cropFrameRef.current.getBoundingClientRect();
+    const deltaX = clientX - dragStartPosRef.current.x;
+    const deltaY = clientY - dragStartPosRef.current.y;
+    const pctX = (deltaX / rect.width) * 100;
+    const pctY = (deltaY / rect.height) * 100;
+
+    const clampedX = Math.max(-100, Math.min(100, initialCropOffsetRef.current.x + pctX));
+    const clampedY = Math.max(-100, Math.min(100, initialCropOffsetRef.current.y + pctY));
+
+    setTempCrop((prev) => ({
+      zoom: prev?.zoom ?? 1.0,
+      x: clampedX,
+      y: clampedY,
+    }));
+  };
+
+  const endCropDrag = () => {
+    isDraggingCropRef.current = false;
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    if (e.touches.length === 1) {
+      startCropDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    if (e.touches.length === 1) {
+      moveCropDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    endCropDrag();
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    startCropDrag(e.clientX, e.clientY);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDraggingCropRef.current) {
+      e.preventDefault();
+      moveCropDrag(e.clientX, e.clientY);
+    }
+  };
+
+  const handleMouseUp = () => {
+    endCropDrag();
   };
 
   // ---------------------------------------------------------------------------
@@ -271,9 +380,6 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
   const totalQueueCount = batchQueue.length;
   const completedQueueCount = batchQueue.filter((q) => q.status === 'completed').length;
   const errorQueueCount = batchQueue.filter((q) => q.status === 'error').length;
-  const pendingOrUploadingCount = batchQueue.filter(
-    (q) => q.status === 'uploading' || q.status === 'pending'
-  ).length;
 
   return (
     <div className="space-y-4 font-mono-archival text-xs">
@@ -557,6 +663,11 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
                       <span className="font-semibold text-[#141413] text-[11px]">
                         PHOTO #{idx + 1}
                       </span>
+                      {img.crop && (
+                        <span className="bg-[#9E2A2B]/10 text-[#9E2A2B] text-[9px] px-1.5 py-0.2 border border-[#9E2A2B]/30 font-medium">
+                          {`${img.crop.zoom}x CROP`}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center space-x-1">
@@ -591,14 +702,37 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
 
                   {/* Thumbnail & Inputs Row */}
                   <div className="flex items-start space-x-3 pt-1">
-                    {/* Thumbnail Plate */}
-                    <div className="w-20 h-20 bg-[#F4F3EE] border border-[#E5E3DB] flex items-center justify-center p-1 shrink-0 overflow-hidden">
-                      <img
-                        src={img.url}
-                        alt={img.alt || `Photo ${idx + 1}`}
-                        className="max-h-full max-w-full w-auto h-auto object-contain"
-                        loading="lazy"
-                      />
+                    {/* Thumbnail Plate & Crop Button */}
+                    <div className="flex flex-col items-center space-y-1.5 shrink-0">
+                      <div className="w-20 h-20 bg-[#F4F3EE] border border-[#E5E3DB] flex items-center justify-center p-1 overflow-hidden relative">
+                        <img
+                          src={img.url}
+                          alt={img.alt || `Photo ${idx + 1}`}
+                          className="max-h-full max-w-full w-auto h-auto object-contain"
+                          loading="lazy"
+                        />
+                      </div>
+                      <div className="flex flex-col items-center space-y-0.5 w-full">
+                        <button
+                          type="button"
+                          onClick={() => openCropModal(idx)}
+                          className="w-full px-1.5 py-0.5 border border-[#E5E3DB] bg-[#F4F3EE] hover:border-[#141413] hover:text-[#141413] text-[#6E6E66] text-[10px] flex items-center justify-center space-x-1 transition-colors"
+                          title="Open presentation crop editor for Slideshow"
+                        >
+                          <Crop className="w-2.5 h-2.5 text-[#9E2A2B]" />
+                          <span>{img.crop ? 'Edit Crop' : 'Edit Crop'}</span>
+                        </button>
+                        {img.crop && (
+                          <button
+                            type="button"
+                            onClick={() => updateImageAt(idx, { crop: undefined })}
+                            className="text-[9px] text-[#8C8C82] hover:text-red-700 underline"
+                            title="Reset to natural uncropped aspect ratio"
+                          >
+                            Reset Crop
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Captions & Alt Text Fields */}
@@ -632,6 +766,176 @@ export const GalleryBlockEditor: React.FC<GalleryBlockEditorProps> = ({
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Presentation Crop Modal */}
+      {cropModalIndex !== null && images[cropModalIndex] && (
+        <div
+          className="fixed inset-0 z-50 bg-[#141413]/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeCropModal();
+          }}
+        >
+          <div className="bg-[#FBFBFA] border border-[#E5E3DB] shadow-2xl max-w-lg w-full p-4 sm:p-6 space-y-4 font-mono-archival">
+            {/* Modal Top Bar */}
+            <div className="flex items-center justify-between border-b border-[#E5E3DB] pb-2">
+              <div>
+                <span className="font-semibold text-xs text-[#141413] uppercase tracking-wider block">
+                  Edit Presentation Crop — Photo #{cropModalIndex + 1}
+                </span>
+                <span className="text-[10px] text-[#8C8C82]">
+                  Slideshow framing only • Original R2 photograph remains unedited
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={closeCropModal}
+                className="p-1 hover:text-[#141413] text-[#8C8C82]"
+                title="Close without saving"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* 4:3 Viewing Frame (Identical to Slideshow presentation) */}
+            <div className="space-y-1">
+              <div
+                ref={cropFrameRef}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                className={`w-full aspect-[4/3] bg-[#F4F3EE] border border-[#D5D3CB] relative overflow-hidden select-none touch-none ${
+                  tempCrop ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+                }`}
+              >
+                {tempCrop ? (
+                  <div className="w-full h-full overflow-hidden flex items-center justify-center relative">
+                    <img
+                      src={images[cropModalIndex].url}
+                      alt="Crop preview"
+                      className="w-full h-full object-cover select-none pointer-events-none transition-transform duration-75"
+                      style={{
+                        transform: `translate(${tempCrop.x}%, ${tempCrop.y}%) scale(${tempCrop.zoom})`,
+                        transformOrigin: 'center center',
+                      }}
+                    />
+                    {/* Composition grid lines */}
+                    <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3 border border-[#141413]/10">
+                      <div className="border-r border-b border-[#141413]/10" />
+                      <div className="border-r border-b border-[#141413]/10" />
+                      <div className="border-b border-[#141413]/10" />
+                      <div className="border-r border-b border-[#141413]/10" />
+                      <div className="border-r border-b border-[#141413]/10" />
+                      <div className="border-b border-[#141413]/10" />
+                      <div className="border-r border-[#141413]/10" />
+                      <div className="border-r border-[#141413]/10" />
+                      <div />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center">
+                    <img
+                      src={images[cropModalIndex].url}
+                      alt="Uncropped preview"
+                      className="w-full h-full object-contain p-2 select-none pointer-events-none opacity-90"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-[#8C8C82] pt-0.5">
+                <span>
+                  {tempCrop
+                    ? 'Drag image to reposition framing'
+                    : 'Natural uncropped aspect ratio (object-contain)'}
+                </span>
+                {tempCrop && (
+                  <span className="text-[#141413] font-semibold">
+                    X: {Math.round(tempCrop.x)}% • Y: {Math.round(tempCrop.y)}%
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Controls: Zoom Slider & Center Button */}
+            <div className="space-y-3 bg-[#F4F3EE] p-3 border border-[#E5E3DB]">
+              <div>
+                <div className="flex items-center justify-between text-[11px] mb-1">
+                  <span className="text-[#141413] font-semibold">
+                    Zoom: {tempCrop ? `${tempCrop.zoom.toFixed(2)}x` : '1.00x (Natural)'}
+                  </span>
+                  {tempCrop && (
+                    <button
+                      type="button"
+                      onClick={() => setTempCrop((prev) => ({ zoom: prev?.zoom ?? 1.0, x: 0, y: 0 }))}
+                      className="text-[10px] text-[#6E6E66] hover:text-[#141413] underline"
+                    >
+                      Center Position
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="range"
+                  min="1.0"
+                  max="3.0"
+                  step="0.05"
+                  value={tempCrop ? tempCrop.zoom : 1.0}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setTempCrop((prev) => ({
+                      zoom: val,
+                      x: prev?.x ?? 0,
+                      y: prev?.y ?? 0,
+                    }));
+                  }}
+                  className="w-full accent-[#9E2A2B] cursor-pointer"
+                />
+                <div className="flex justify-between text-[9px] text-[#8C8C82] mt-0.5">
+                  <span>1.0x (Standard)</span>
+                  <span>2.0x</span>
+                  <span>3.0x (Max)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-2 border-t border-[#E5E3DB]">
+              <button
+                type="button"
+                onClick={() => setTempCrop(null)}
+                className={`text-xs px-2.5 py-1 border transition-colors ${
+                  tempCrop === null
+                    ? 'bg-[#141413] text-[#FBFBFA] border-[#141413]'
+                    : 'border-[#E5E3DB] text-[#6E6E66] hover:bg-[#EAE8E0] hover:text-[#141413]'
+                }`}
+                title="Restore natural uncropped presentation"
+              >
+                Reset to Natural (Uncropped)
+              </button>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={closeCropModal}
+                  className="px-3 py-1 border border-[#E5E3DB] text-[#6E6E66] hover:bg-[#EAE8E0] hover:text-[#141413] text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveCropModal}
+                  className="px-3.5 py-1 bg-[#141413] text-[#FBFBFA] hover:bg-[#2C2C28] text-xs font-medium"
+                >
+                  Save Crop
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
