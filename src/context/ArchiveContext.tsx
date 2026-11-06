@@ -59,7 +59,7 @@ interface ArchiveContextType {
 
   addCollection: (col: Omit<Collection, 'id'>) => Promise<Collection>;
   updateCollection: (id: string, updates: Partial<Collection>) => Promise<void>;
-  deleteCollection: (id: string) => void;
+  deleteCollection: (id: string) => Promise<void>;
   reorderCollections: (orderedCollections: Collection[]) => Promise<void>;
 
   addStudy: (std: Omit<Study, 'id'>) => Promise<Study>;
@@ -519,8 +519,70 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  const deleteCollection = (id: string) => {
-    setCollections((prev) => prev.filter((c) => c.id !== id));
+  const deleteCollection = async (id: string): Promise<void> => {
+    try {
+      await api.deleteCollection(id);
+      setCollections((prev) => prev.filter((c) => c.id !== id));
+      const deletedStudyIds = new Set(studies.filter((s) => s.collectionId === id).map((s) => s.id));
+      setStudies((prev) => prev.filter((s) => s.collectionId !== id));
+      setEntries((prev) =>
+        prev.map((entry) => {
+          let updated = entry;
+          let changed = false;
+          if (entry.collectionId === id) {
+            updated = { ...updated, collectionId: undefined };
+            changed = true;
+          }
+          if (entry.studyId && deletedStudyIds.has(entry.studyId)) {
+            updated = { ...updated, studyId: undefined };
+            changed = true;
+          }
+          if (updated.relatedStudyIds && updated.relatedStudyIds.some((sId) => deletedStudyIds.has(sId))) {
+            updated = {
+              ...updated,
+              relatedStudyIds: updated.relatedStudyIds.filter((sId) => !deletedStudyIds.has(sId)),
+            };
+            changed = true;
+          }
+          return changed ? updated : entry;
+        })
+      );
+      setCuratedWorks((prev) =>
+        prev.map((work) => {
+          if (work.relatedStudyIds && work.relatedStudyIds.some((sId) => deletedStudyIds.has(sId))) {
+            return {
+              ...work,
+              relatedStudyIds: work.relatedStudyIds.filter((sId) => !deletedStudyIds.has(sId)),
+            };
+          }
+          return work;
+        })
+      );
+    } catch (err) {
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for deleteCollection:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, removing from local state only', err);
+      setCollections((prev) => prev.filter((c) => c.id !== id));
+      const deletedStudyIds = new Set(studies.filter((s) => s.collectionId === id).map((s) => s.id));
+      setStudies((prev) => prev.filter((s) => s.collectionId !== id));
+      setEntries((prev) =>
+        prev.map((entry) => {
+          let updated = entry;
+          let changed = false;
+          if (entry.collectionId === id) {
+            updated = { ...updated, collectionId: undefined };
+            changed = true;
+          }
+          if (entry.studyId && deletedStudyIds.has(entry.studyId)) {
+            updated = { ...updated, studyId: undefined };
+            changed = true;
+          }
+          return changed ? updated : entry;
+        })
+      );
+    }
   };
 
   const addStudy = async (stdData: Omit<Study, 'id'>): Promise<Study> => {

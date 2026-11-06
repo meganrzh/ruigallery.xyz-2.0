@@ -175,10 +175,12 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [showReaderPreview, setShowReaderPreview] = useState(false);
 
+  const [isSlugUserModified, setIsSlugUserModified] = useState(false);
+
   // Auto-slug generator on title edit for new entries
   const handleTitleChange = (val: string) => {
     setTitle(val);
-    if (!isEditing && (!slug || slug.startsWith('entry-'))) {
+    if (!isEditing && !isSlugUserModified) {
       const generated = val
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
@@ -511,7 +513,10 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
               <input
                 type="text"
                 value={slug}
-                onChange={(e) => setSlug(e.target.value)}
+                onChange={(e) => {
+                  setIsSlugUserModified(true);
+                  setSlug(e.target.value);
+                }}
                 className="w-full p-2 bg-[#F4F3EE] border border-[#E5E3DB] text-[#141413]"
                 required
               />

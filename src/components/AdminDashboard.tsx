@@ -382,6 +382,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     }
   };
 
+  // Collection Deletion Confirmation State & Handler
+  const [collectionPendingDelete, setCollectionPendingDelete] = useState<{
+    collection: Collection;
+    studiesCount: number;
+    affectedEntriesCount: number;
+  } | null>(null);
+  const [isDeletingCollection, setIsDeletingCollection] = useState(false);
+
+  const handleDeleteCollectionClick = (col: Collection) => {
+    const colStudies = studies.filter((s) => s.collectionId === col.id);
+    const colStudyIds = new Set(colStudies.map((s) => s.id));
+    const affectedCount = entries.filter(
+      (e) => e.collectionId === col.id || (e.studyId && colStudyIds.has(e.studyId))
+    ).length;
+    setCollectionPendingDelete({
+      collection: col,
+      studiesCount: colStudies.length,
+      affectedEntriesCount: affectedCount,
+    });
+  };
+
+  const handleConfirmDeleteCollection = async () => {
+    if (!collectionPendingDelete) return;
+    setIsDeletingCollection(true);
+    try {
+      await deleteCollection(collectionPendingDelete.collection.id);
+      setSuccessMessage(
+        `Collection "${collectionPendingDelete.collection.title}" deleted. ${collectionPendingDelete.studiesCount} study/studies removed. ${collectionPendingDelete.affectedEntriesCount} entry/entries preserved in Archive.`
+      );
+      setTimeout(() => setSuccessMessage(null), 4000);
+      setEditingColId(null);
+      setCollectionPendingDelete(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error deleting collection';
+      setErrorMessage(`Failed to delete collection: ${msg}`);
+      setTimeout(() => setErrorMessage(null), 4000);
+    } finally {
+      setIsDeletingCollection(false);
+    }
+  };
+
   // Handle Add Collection
   const handleCreateCollection = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1448,21 +1489,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               className="w-full p-2 bg-white border border-[#E5E3DB]"
                             />
                           </div>
-                          <div className="flex gap-2 justify-end">
+                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#E5E3DB]">
                             <button
                               type="button"
-                              onClick={() => setEditingColId(null)}
-                              className="px-3 py-1.5 border border-[#E5E3DB] bg-white text-[#6E6E66]"
+                              onClick={() => handleDeleteCollectionClick(collection)}
+                              className="px-3 py-1.5 border border-[#E5E3DB] bg-white hover:border-red-400 hover:text-red-700 text-[#8C8C82] text-xs transition-colors flex items-center space-x-1.5"
+                              title="Delete Collection (Preserves all entries)"
                             >
-                              Cancel
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete Collection</span>
                             </button>
-                            <button
-                              type="submit"
-                              disabled={isSavingCol || incompatibleEditEntries.length > 0}
-                              className="px-4 py-1.5 bg-[#9E2A2B] text-white font-semibold uppercase tracking-wider disabled:opacity-50"
-                            >
-                              {isSavingCol ? 'Saving...' : 'Save Collection'}
-                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditingColId(null)}
+                                className="px-3 py-1.5 border border-[#E5E3DB] bg-white text-[#6E6E66]"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={isSavingCol || incompatibleEditEntries.length > 0}
+                                className="px-4 py-1.5 bg-[#9E2A2B] text-white font-semibold uppercase tracking-wider disabled:opacity-50"
+                              >
+                                {isSavingCol ? 'Saving...' : 'Save Collection'}
+                              </button>
+                            </div>
                           </div>
                         </form>
                       ) : (
@@ -1479,7 +1531,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                             <div className="space-y-1">
                               <div className="flex items-center flex-wrap gap-2 text-xs font-mono-archival text-[#8C8C82]">
                                 <span className="px-2 py-0.5 bg-[#141413] text-[#FBFBFA] font-semibold text-[10px] tracking-wider">
-                                  ORDER #{index + 1}
+                                   ORDER #{index + 1}
                                 </span>
                                 {collection.mediumScope ? (
                                   <span className="px-2 py-0.5 bg-[#EAE8E0] text-[#141413] font-semibold text-[10px] tracking-wider uppercase border border-[#D5D3CB]">
@@ -1531,6 +1583,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               className="px-3 py-1 text-xs font-mono-archival border border-[#E5E3DB] bg-white hover:border-[#141413] shrink-0"
                             >
                               Edit Collection
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCollectionClick(collection)}
+                              className="px-2.5 py-1 text-xs font-mono-archival border border-[#E5E3DB] bg-white hover:border-red-400 hover:text-red-700 text-[#8C8C82] shrink-0 transition-colors"
+                              title="Delete Collection (Preserves all entries)"
+                            >
+                              Delete
                             </button>
                           </div>
                         </div>
@@ -1750,6 +1810,110 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>{isDeletingStudy ? 'Deleting Study...' : 'Confirm Delete Study'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Collection Confirmation Modal */}
+        {collectionPendingDelete && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="relative w-full max-w-lg bg-[#FBFBFA] border border-[#E5E3DB] shadow-2xl text-[#141413] animate-fade-in font-mono-archival text-xs">
+              {/* Modal Header */}
+              <div className="bg-[#141413] text-[#FBFBFA] px-6 py-3.5 flex items-center justify-between border-b border-[#333330]">
+                <div className="flex items-center space-x-2">
+                  <span className="text-[#9E2A2B] font-bold">[ COLLECTION DELETION ]</span>
+                  <span className="text-[#8C8C82]">•</span>
+                  <span className="font-semibold uppercase tracking-wider">Confirm Removal</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !isDeletingCollection && setCollectionPendingDelete(null)}
+                  className="p-1 hover:bg-[#2C2C28] text-[#8C8C82] hover:text-[#FBFBFA] transition-colors"
+                  title="Cancel"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div>
+                  <span className="text-[10px] text-[#8C8C82] uppercase tracking-wider block mb-1">
+                    Target Collection
+                  </span>
+                  <h3 className="font-serif text-xl font-medium text-[#141413]">
+                    Delete “{collectionPendingDelete.collection.title}”?
+                  </h3>
+                  {collectionPendingDelete.collection.subtitle && (
+                    <p className="font-serif text-xs text-[#6E6E66] italic mt-0.5">
+                      {collectionPendingDelete.collection.subtitle}
+                    </p>
+                  )}
+                </div>
+
+                {/* Metadata Details */}
+                <div className="p-3 bg-[#F4F3EE] border border-[#E5E3DB] space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-[#8C8C82]">Studies to be deleted:</span>
+                    <span className="font-medium text-[#141413]">
+                      {collectionPendingDelete.studiesCount} {collectionPendingDelete.studiesCount === 1 ? 'Study' : 'Studies'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#8C8C82]">Affected Entries (Preserved):</span>
+                    <span className="font-semibold text-[#141413]">
+                      {collectionPendingDelete.affectedEntriesCount} {collectionPendingDelete.affectedEntriesCount === 1 ? 'Entry' : 'Entries'}
+                    </span>
+                  </div>
+                  {collectionPendingDelete.collection.mediumScope && (
+                    <div className="flex justify-between">
+                      <span className="text-[#8C8C82]">Medium Scope:</span>
+                      <span className="font-medium text-[#9E2A2B] uppercase text-[10px]">{collectionPendingDelete.collection.mediumScope}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Required Confirmation Notice */}
+                <div className="p-3.5 bg-amber-50/70 border border-amber-200 text-[#78350F] space-y-2">
+                  <p className="font-medium leading-relaxed">
+                    {collectionPendingDelete.studiesCount === 0
+                      ? 'This will delete this Collection.'
+                      : collectionPendingDelete.studiesCount === 1
+                      ? 'This will delete this Collection and its 1 Study.'
+                      : `This will delete this Collection and its ${collectionPendingDelete.studiesCount} Studies.`}
+                  </p>
+                  <p className="leading-relaxed">
+                    {collectionPendingDelete.affectedEntriesCount === 0
+                      ? 'No Entries currently belong to this Collection or its Studies.'
+                      : collectionPendingDelete.affectedEntriesCount === 1
+                      ? '1 Entry will remain in the Archive but will no longer belong to this Collection or its Studies.'
+                      : `${collectionPendingDelete.affectedEntriesCount} Entries will remain in the Archive but will no longer belong to this Collection or its Studies.`}
+                  </p>
+                  <p className="text-[11px] text-[#92400E] font-semibold">
+                    This action cannot be undone.
+                  </p>
+                </div>
+
+                {/* Action Controls */}
+                <div className="pt-2 flex items-center justify-end space-x-3">
+                  <button
+                    type="button"
+                    disabled={isDeletingCollection}
+                    onClick={() => setCollectionPendingDelete(null)}
+                    className="px-4 py-2 border border-[#E5E3DB] bg-[#FBFBFA] hover:bg-[#EAE8E0] text-[#6E6E66] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDeletingCollection}
+                    onClick={handleConfirmDeleteCollection}
+                    className="px-5 py-2 bg-red-800 hover:bg-red-900 text-white font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isDeletingCollection ? 'Deleting Collection...' : 'Delete Collection'}</span>
                   </button>
                 </div>
               </div>

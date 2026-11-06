@@ -1,5 +1,6 @@
 import type {
   D1PreparedStatement,
+  D1Database,
   Env,
   CollectionRecord,
   StudyRecord,
@@ -101,6 +102,40 @@ export function validateImageSignature(bytes: Uint8Array): ImageValidationResult
     valid: false,
     error: 'Unsupported file format. Allowed image formats are JPEG, PNG, WebP, GIF, and AVIF.',
   };
+}
+
+export function slugifyText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+export async function generateUniqueEntrySlug(
+  db: D1Database,
+  preferredBase: string,
+  excludeEntryId?: string
+): Promise<string> {
+  const baseSlug = slugifyText(preferredBase) || 'entry';
+  const query = excludeEntryId
+    ? 'SELECT slug FROM entries WHERE (slug = ? OR slug LIKE ?) AND id != ?'
+    : 'SELECT slug FROM entries WHERE slug = ? OR slug LIKE ?';
+  const stmt = excludeEntryId
+    ? db.prepare(query).bind(baseSlug, `${baseSlug}-%`, excludeEntryId)
+    : db.prepare(query).bind(baseSlug, `${baseSlug}-%`);
+  const { results } = await stmt.all<{ slug: string }>();
+
+  const existing = new Set((results || []).map((r) => r.slug.toLowerCase()));
+  if (!existing.has(baseSlug.toLowerCase())) {
+    return baseSlug;
+  }
+  let counter = 2;
+  while (existing.has(`${baseSlug}-${counter}`.toLowerCase())) {
+    counter++;
+  }
+  return `${baseSlug}-${counter}`;
 }
 
 export async function handleAdminMutationRoutes(
@@ -326,29 +361,65 @@ export async function handleAdminMutationRoutes(
     }
 
     if (method === 'DELETE') {
-      const countCheck = await env.DB.prepare(
-        'SELECT COUNT(*) as count FROM studies WHERE collection_id = ?'
-      ).bind(id).first<{ count: number }>();
+      const collection = await env.DB.prepare(
+        'SELECT id, title FROM collections WHERE id = ?'
+      ).bind(id).first<{ id: string; title: string }>();
 
-      if (countCheck && countCheck.count > 0) {
-        return errorResponse(
-          `Cannot delete collection: ${countCheck.count} study/studies belong to this collection. Move or delete them first.`,
-          409
-        );
-      }
-
-      const result = await env.DB.prepare(
-        'DELETE FROM collections WHERE id = ?'
-      ).bind(id).run();
-
-      if (result.meta?.changes === 0) {
+      if (!collection) {
         return errorResponse('Collection not found', 404);
       }
 
+      // 1. Identify Studies belonging to this Collection
+      const studiesRow = await env.DB.prepare(
+        'SELECT COUNT(*) as count FROM studies WHERE collection_id = ?'
+      ).bind(id).first<{ count: number }>();
+      const deletedStudiesCount = studiesRow?.count || 0;
+
+      // 2. Identify affected Entries (either directly assigned to this collection or to one of its studies)
+      const entriesRow = await env.DB.prepare(
+        `SELECT COUNT(*) as count FROM entries
+         WHERE collection_id = ? OR study_id IN (SELECT id FROM studies WHERE collection_id = ?)`
+      ).bind(id, id).first<{ count: number }>();
+      const affectedEntriesCount = entriesRow?.count || 0;
+
+      const now = new Date().toISOString();
+
+      // Atomically:
+      // 1. Preserve ALL Entries: null collection_id, and null study_id if it belonged to this collection's studies
+      // 2. Remove junction table records from entry_related_studies for deleted studies
+      // 3. Remove junction table records from curated_work_related_studies for deleted studies
+      // 4. Delete all studies belonging to this collection
+      // 5. Delete the collection record itself
+      await env.DB.batch([
+        env.DB.prepare(
+          `UPDATE entries
+           SET collection_id = NULL,
+               study_id = CASE
+                 WHEN study_id IN (SELECT id FROM studies WHERE collection_id = ?) THEN NULL
+                 ELSE study_id
+               END,
+               updated_at = ?
+           WHERE collection_id = ? OR study_id IN (SELECT id FROM studies WHERE collection_id = ?)`
+        ).bind(id, now, id, id),
+        env.DB.prepare(
+          'DELETE FROM entry_related_studies WHERE study_id IN (SELECT id FROM studies WHERE collection_id = ?)'
+        ).bind(id),
+        env.DB.prepare(
+          'DELETE FROM curated_work_related_studies WHERE study_id IN (SELECT id FROM studies WHERE collection_id = ?)'
+        ).bind(id),
+        env.DB.prepare('DELETE FROM studies WHERE collection_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM collections WHERE id = ?').bind(id),
+      ]);
+
       return jsonResponse({
         success: true,
-        message: 'Collection deleted successfully',
-        id,
+        message: `Collection "${collection.title}" deleted successfully. ${deletedStudiesCount} study/studies removed. ${affectedEntriesCount} entry/entries preserved in Archive.`,
+        data: {
+          id,
+          title: collection.title,
+          deletedStudiesCount,
+          affectedEntriesCount,
+        },
       });
     }
 
@@ -744,10 +815,9 @@ export async function handleAdminMutationRoutes(
     }
 
     const id = body.id || `entry-${Date.now()}`;
-    const slug =
-      body.slug?.trim() ||
-      title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
-      id;
+    const preferredCandidate = (body.slug && body.slug.trim()) || title;
+    const baseCandidate = slugifyText(preferredCandidate) || id;
+    let slug = await generateUniqueEntrySlug(env.DB, baseCandidate);
     const ruiRevision = body.ruiRevision !== undefined ? body.ruiRevision : 'REV 00';
     const medium = body.medium?.trim() || null;
     const subtitle = body.subtitle?.trim() || null;
@@ -849,7 +919,76 @@ export async function handleAdminMutationRoutes(
       }
     }
 
-    await env.DB.batch(batchStatements);
+    try {
+      await env.DB.batch(batchStatements);
+    } catch (batchErr: unknown) {
+      const errStr = String(batchErr);
+      if (errStr.includes('UNIQUE constraint failed: entries.slug') || errStr.includes('SQLITE_CONSTRAINT_UNIQUE')) {
+        const retrySlug = await generateUniqueEntrySlug(env.DB, baseCandidate);
+        if (retrySlug !== slug) {
+          slug = retrySlug;
+          batchStatements[2] = env.DB.prepare(
+            `INSERT INTO entries (
+              id, slug, entry_number, collection_id, study_id, title, subtitle, rui_revision,
+              medium, summary, excerpt, location, archival_date, display_date,
+              published_date, last_modified_date, featured_on_home, home_layout_weight,
+              cover_image, cover_image_caption, cover_image_alt, blocks, metadata,
+              visibility, order_index, created_at, updated_at
+            )
+            SELECT
+              ?, ?, printf('%03d', last_number), ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?,
+              ?, ?, ?, ?, ?,
+              ?, ?, ?, ?
+            FROM accession_sequences
+            WHERE name = 'entry_number'`
+          ).bind(
+            id,
+            slug,
+            collectionId,
+            studyId,
+            title,
+            subtitle,
+            ruiRevision,
+            medium,
+            summary,
+            excerpt,
+            location,
+            archivalDate,
+            displayDate,
+            publishedDate,
+            lastModifiedDate,
+            featuredOnHome,
+            homeLayoutWeight,
+            coverImage,
+            coverImageCaption,
+            coverImageAlt,
+            blocksJson,
+            metadataJson,
+            visibility,
+            order_index,
+            now,
+            now
+          );
+          try {
+            await env.DB.batch(batchStatements);
+          } catch (retryErr: unknown) {
+            return errorResponse(
+              `The URL slug '${slug}' conflicted with an existing Entry. Please retry.`,
+              409
+            );
+          }
+        } else {
+          return errorResponse(
+            `The URL slug '${slug}' conflicted with an existing Entry. Please retry.`,
+            409
+          );
+        }
+      } else {
+        throw batchErr;
+      }
+    }
 
     const insertedEntry = await env.DB.prepare('SELECT * FROM entries WHERE id = ?').bind(id).first<EntryRecord>();
 
@@ -960,7 +1099,19 @@ export async function handleAdminMutationRoutes(
       }
 
       const now = new Date().toISOString();
-      const slug = body.slug !== undefined ? body.slug.trim() : existingEntry.slug;
+      let slug = existingEntry.slug;
+      if (body.slug !== undefined) {
+        const trimmedSlug = slugifyText(body.slug.trim());
+        if (trimmedSlug && trimmedSlug !== existingEntry.slug) {
+          const conflict = await env.DB.prepare(
+            'SELECT id FROM entries WHERE slug = ? AND id != ?'
+          ).bind(trimmedSlug, id).first<{ id: string }>();
+          if (conflict) {
+            return errorResponse(`The URL slug '${trimmedSlug}' is already in use by another Entry.`, 409);
+          }
+          slug = trimmedSlug;
+        }
+      }
       // Note: entry_number is permanently immutable and cannot be altered by PUT requests.
       const ruiRevision = body.ruiRevision !== undefined ? body.ruiRevision : existingEntry.rui_revision;
       const medium = normalizeNullableText(body.medium, existingEntry.medium, true);
@@ -1071,7 +1222,15 @@ export async function handleAdminMutationRoutes(
         }
       }
 
-      await env.DB.batch(batchStatements);
+      try {
+        await env.DB.batch(batchStatements);
+      } catch (batchErr: unknown) {
+        const errStr = String(batchErr);
+        if (errStr.includes('UNIQUE constraint failed: entries.slug') || errStr.includes('SQLITE_CONSTRAINT_UNIQUE')) {
+          return errorResponse(`The URL slug '${slug}' is already in use by another Entry.`, 409);
+        }
+        throw batchErr;
+      }
 
       const [updatedEntry, studyCollectionMapResult, threadsResult, relStudiesResult, relEntriesResult] =
         await Promise.all([
