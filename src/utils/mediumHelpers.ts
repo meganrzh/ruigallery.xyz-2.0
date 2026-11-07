@@ -12,7 +12,7 @@ export interface MediumDefinition {
  * - Canonical Medium names
  * - Uppercase domain practice tags (at the same conceptual level)
  * - Concise, voice-aligned descriptions
- * - Image-led presentation flags (Visual Work and Clothing / Upcycling only)
+ * - Image-led presentation flags (Visual Work, Clothing / Upcycling, Curated Event)
  */
 export const CANONICAL_MEDIUMS: Record<string, MediumDefinition> = {
   'Creative Writing': {
@@ -49,17 +49,18 @@ export const CANONICAL_MEDIUMS: Record<string, MediumDefinition> = {
     name: 'Curated Event',
     tag: 'CURATORIAL PRACTICE',
     description: 'Gatherings, exhibitions, and programmed encounters composed as creative practice.',
-    imageLed: false,
+    imageLed: true,
   },
 };
 
 /**
  * Shared registry of visually oriented mediums that receive image-led archival treatment.
- * Strictly Visual Work and Clothing / Upcycling.
+ * Visual Work, Clothing / Upcycling, and Curated Event.
  */
 export const IMAGE_LED_MEDIUMS = [
   'Visual Work',
   'Clothing / Upcycling',
+  'Curated Event',
 ] as const;
 
 export type ImageLedMedium = (typeof IMAGE_LED_MEDIUMS)[number];

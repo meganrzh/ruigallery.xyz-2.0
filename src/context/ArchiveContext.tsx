@@ -81,7 +81,7 @@ const STORAGE_KEYS = {
   ABOUT: 'rui_archive_about_v1',
 };
 
-const ArchiveContext = createContext<ArchiveContextType | undefined>(undefined);
+export const ArchiveContext = createContext<ArchiveContextType | undefined>(undefined);
 
 function sortCuratedWorks(works: CuratedWork[]): CuratedWork[] {
   return [...works].sort((a, b) => (b.archivalDate || '').localeCompare(a.archivalDate || ''));

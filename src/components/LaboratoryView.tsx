@@ -209,7 +209,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                                   No published records in this medium.
                                 </p>
                               ) : isImageLed ? (
-                                /* Compact Image-Led Previews for Visual Work & Clothing / Upcycling */
+                                /* Compact Image-Led Previews for Visual Work, Clothing / Upcycling & Curated Event */
                                 <div className="grid grid-cols-3 gap-2.5 pt-1 items-start">
                                   {med.latestWorks.map((work) => {
                                     const previewImg = getEntryPreviewImage(work);
