@@ -15,11 +15,13 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
   const publishedWorks = useMemo(() => {
     const list: CuratedWork[] = [];
     const seenIds = new Set<string>();
+    const seenSlugs = new Set<string>();
 
     entries
       .filter((e) => e.visibility === 'published' && Boolean(e.featuredOnHome))
       .forEach((entry) => {
         seenIds.add(entry.id);
+        seenSlugs.add(entry.slug);
         list.push({
           id: entry.id,
           slug: entry.slug,
@@ -47,9 +49,38 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
     curatedWorks
       .filter((w) => w.visibility === 'published' && w.featuredOnHome)
       .forEach((w) => {
-        if (!seenIds.has(w.id)) {
-          seenIds.add(w.id);
-          list.push(w);
+        if (!seenIds.has(w.id) && !seenSlugs.has(w.slug)) {
+          const matchingEntry = entries.find((e) => e.id === w.id || e.slug === w.slug);
+          if (matchingEntry) {
+            seenIds.add(matchingEntry.id);
+            seenSlugs.add(matchingEntry.slug);
+            list.push({
+              id: matchingEntry.id,
+              slug: matchingEntry.slug,
+              title: matchingEntry.title,
+              subtitle: matchingEntry.subtitle,
+              workType: (matchingEntry.medium as any) || 'Essay',
+              year: formatYear(matchingEntry.createdDate),
+              date: matchingEntry.displayDate || formatFullDate(matchingEntry.createdDate),
+              archivalDate: formatFullDate(matchingEntry.createdDate),
+              featuredOnHome: true,
+              homeLayoutWeight: matchingEntry.homeLayoutWeight || w.homeLayoutWeight || 'standard',
+              coverImage: matchingEntry.coverImage || w.coverImage || '',
+              coverImageCaption: matchingEntry.coverImageCaption || w.coverImageCaption,
+              coverImageAlt: matchingEntry.coverImageAlt || w.coverImageAlt,
+              excerpt: matchingEntry.excerpt || matchingEntry.summary || w.excerpt || '',
+              bodyBlocks: matchingEntry.blocks as any,
+              metadata: matchingEntry.metadata || w.metadata,
+              relatedStudyIds: matchingEntry.relatedStudyIds || (matchingEntry.studyId ? [matchingEntry.studyId] : w.relatedStudyIds),
+              relatedEntryIds: matchingEntry.relatedEntryIds || w.relatedEntryIds || [],
+              visibility: matchingEntry.visibility,
+              order: matchingEntry.order || w.order || 0,
+            });
+          } else {
+            seenIds.add(w.id);
+            seenSlugs.add(w.slug);
+            list.push(w);
+          }
         }
       });
 
@@ -86,7 +117,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
           <div className="mb-20">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
               {/* Large Image on Left / Top */}
-              <div className="lg:col-span-8 group cursor-pointer" onClick={() => onNavigate({ page: 'work', slug: dominantWork.slug })}>
+              <div className="lg:col-span-8 group cursor-pointer" onClick={() => onNavigate({ page: 'entry', slug: dominantWork.slug })}>
                 <div className="relative overflow-hidden bg-[#F4F3EE] border border-[#E5E3DB]">
                   <img
                     src={dominantWork.coverImage}
@@ -110,7 +141,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
                   </div>
 
                   <h3
-                    onClick={() => onNavigate({ page: 'work', slug: dominantWork.slug })}
+                    onClick={() => onNavigate({ page: 'entry', slug: dominantWork.slug })}
                     className="font-serif text-2xl sm:text-3xl lg:text-4xl text-[#141413] hover:text-[#9E2A2B] transition-colors cursor-pointer leading-tight font-medium"
                   >
                     {dominantWork.title}
@@ -149,7 +180,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
 
                   <button
                     id={`work-open-${dominantWork.slug}`}
-                    onClick={() => onNavigate({ page: 'work', slug: dominantWork.slug })}
+                    onClick={() => onNavigate({ page: 'entry', slug: dominantWork.slug })}
                     className="group inline-flex items-center space-x-2 text-xs font-mono-archival tracking-wider uppercase py-2 text-[#141413] hover:text-[#9E2A2B] font-medium"
                   >
                     <span>Read / View Complete Work</span>
@@ -175,7 +206,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
                 {/* Image */}
                 <div
                   className="cursor-pointer overflow-hidden bg-[#F4F3EE] border border-[#E5E3DB]"
-                  onClick={() => onNavigate({ page: 'work', slug: work.slug })}
+                  onClick={() => onNavigate({ page: 'entry', slug: work.slug })}
                 >
                   <img
                     src={work.coverImage}
@@ -193,7 +224,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
                   </div>
 
                   <h3
-                    onClick={() => onNavigate({ page: 'work', slug: work.slug })}
+                    onClick={() => onNavigate({ page: 'entry', slug: work.slug })}
                     className="font-serif text-xl md:text-2xl text-[#141413] group-hover:text-[#9E2A2B] transition-colors cursor-pointer font-medium leading-snug"
                   >
                     {work.title}
@@ -225,7 +256,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
                   )}
 
                   <button
-                    onClick={() => onNavigate({ page: 'work', slug: work.slug })}
+                    onClick={() => onNavigate({ page: 'entry', slug: work.slug })}
                     className="inline-flex items-center space-x-1.5 text-xs font-mono-archival text-[#141413] hover:text-[#9E2A2B] font-medium"
                   >
                     <span>View Dedicated Page</span>

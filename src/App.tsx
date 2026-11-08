@@ -4,7 +4,6 @@ import { AppView } from './types';
 import { Navigation } from './components/Navigation';
 import { RuiHero } from './components/RuiHero';
 import { CuratedEditorialGrid } from './components/CuratedEditorialGrid';
-import { CuratedWorkDetail } from './components/CuratedWorkDetail';
 import { LaboratoryView } from './components/LaboratoryView';
 import { CollectionDetail } from './components/CollectionDetail';
 import { StudyDetail } from './components/StudyDetail';
@@ -24,7 +23,7 @@ function parseHash(hash: string): AppView {
 
   switch (section) {
     case 'work':
-      return slug ? { page: 'work', slug } : { page: 'home' };
+      return slug ? { page: 'entry', slug } : { page: 'home' };
     case 'laboratory':
       return { page: 'laboratory', filterThreadId: slug };
     case 'collection':
@@ -49,7 +48,7 @@ function viewToHash(view: AppView): string {
     case 'home':
       return '#/';
     case 'work':
-      return `#/work/${view.slug}`;
+      return `#/entry/${view.slug}`;
     case 'laboratory':
       return view.filterThreadId ? `#/laboratory/${view.filterThreadId}` : '#/laboratory';
     case 'collection':
@@ -117,7 +116,7 @@ const MainApp: React.FC = () => {
         )}
 
         {currentView.page === 'work' && (
-          <CuratedWorkDetail slug={currentView.slug} onNavigate={handleNavigate} />
+          <EntryDetail slug={currentView.slug} onNavigate={handleNavigate} />
         )}
 
         {currentView.page === 'laboratory' && (

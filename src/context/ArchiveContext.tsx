@@ -204,8 +204,6 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const getCuratedWork = (idOrSlug: string) => {
-    const fromCurated = curatedWorks.find((w) => w.id === idOrSlug || w.slug === idOrSlug);
-    if (fromCurated) return fromCurated;
     const entry = entries.find((e) => e.id === idOrSlug || e.slug === idOrSlug);
     if (entry) {
       return {
@@ -231,6 +229,8 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         order: entry.order || 0,
       } as CuratedWork;
     }
+    const fromCurated = curatedWorks.find((w) => w.id === idOrSlug || w.slug === idOrSlug);
+    if (fromCurated) return fromCurated;
     return undefined;
   };
 
