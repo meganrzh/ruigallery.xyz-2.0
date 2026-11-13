@@ -144,7 +144,7 @@ const MainApp: React.FC = () => {
         )}
 
         {currentView.page === 'about' && (
-          <AboutView />
+          <AboutView onNavigate={handleNavigate} />
         )}
 
         {currentView.page === 'admin' && (
