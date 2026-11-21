@@ -189,6 +189,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [newColSubtitle, setNewColSubtitle] = useState('');
   const [newColDesc, setNewColDesc] = useState('');
   const [newColPeriod, setNewColPeriod] = useState('2026 — Present');
+  const [newColLocationContext, setNewColLocationContext] = useState('');
 
   // New Study Form State
   const [newStdTitle, setNewStdTitle] = useState('');
@@ -217,6 +218,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   const [editColSubtitle, setEditColSubtitle] = useState('');
   const [editColDesc, setEditColDesc] = useState('');
   const [editColPeriod, setEditColPeriod] = useState('');
+  const [editColLocationContext, setEditColLocationContext] = useState('');
   const [isSavingCol, setIsSavingCol] = useState(false);
 
   // Editing existing Study State
@@ -242,6 +244,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     setEditColSubtitle(col.subtitle || '');
     setEditColDesc(col.description);
     setEditColPeriod(col.period);
+    setEditColLocationContext(col.locationContext || '');
   };
 
   const handleSaveCollectionEdit = async (e: React.FormEvent) => {
@@ -254,6 +257,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
         subtitle: editColSubtitle,
         description: editColDesc,
         period: editColPeriod,
+        locationContext: editColLocationContext.trim() || undefined,
       });
       setSuccessMessage(`Collection "${editColTitle}" updated and persisted!`);
       setEditingColId(null);
@@ -434,10 +438,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
       subtitle: newColSubtitle,
       description: newColDesc,
       period: newColPeriod,
+      locationContext: newColLocationContext.trim() || undefined,
     });
     setNewColTitle('');
     setNewColSubtitle('');
     setNewColDesc('');
+    setNewColLocationContext('');
     setSuccessMessage(`Collection "${newColTitle}" created!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
@@ -1280,6 +1286,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                     />
                   </div>
                   <div>
+                    <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Geographic Context</label>
+                    <input
+                      type="text"
+                      value={newColLocationContext}
+                      onChange={(e) => setNewColLocationContext(e.target.value)}
+                      placeholder="e.g. Los Angeles · Atlanta · Zhejiang · Liaoning"
+                      className="w-full p-2 bg-[#FBFBFA] border border-[#E5E3DB]"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Description</label>
                     <textarea
                       rows={3}
@@ -1429,14 +1445,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                               />
                             </div>
                           </div>
-                          <div>
-                            <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
-                            <input
-                              type="text"
-                              value={editColPeriod}
-                              onChange={(e) => setEditColPeriod(e.target.value)}
-                              className="w-full p-2 bg-white border border-[#E5E3DB]"
-                            />
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Period</label>
+                              <input
+                                type="text"
+                                value={editColPeriod}
+                                onChange={(e) => setEditColPeriod(e.target.value)}
+                                className="w-full p-2 bg-white border border-[#E5E3DB]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[#8C8C82] text-[10px] uppercase mb-1">Geographic Context</label>
+                              <input
+                                type="text"
+                                value={editColLocationContext}
+                                onChange={(e) => setEditColLocationContext(e.target.value)}
+                                placeholder="e.g. California · Florence · Rome · London"
+                                className="w-full p-2 bg-white border border-[#E5E3DB]"
+                              />
+                            </div>
                           </div>
 
                           <div>
@@ -1498,6 +1526,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
                                 <span>•</span>
                                 <span>{collectionStudies.length} Studies</span>
                               </div>
+                              {collection.locationContext && (
+                                <p className="text-[11px] font-mono-archival text-[#8C8C82]">
+                                  Geographic Context: <span className="text-[#4A4A44]">{collection.locationContext}</span>
+                                </p>
+                              )}
                               {collection.subtitle && (
                                 <p className="font-serif text-sm text-[#6E6E66] italic mt-0.5">{collection.subtitle}</p>
                               )}

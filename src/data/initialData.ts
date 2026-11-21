@@ -24,22 +24,22 @@ export const INITIAL_COLLECTIONS: Collection[] = [
   {
     id: 'col-european-field',
     slug: 'european-field-studies',
-    title: 'European Field Studies',
+    title: 'Western Cultural Studies',
     subtitle: 'Visual ethnography, architectural typologies, and fragmented monuments',
     description: 'Field notes, photographic surveys, and topographic tracings across Venice, Rome, Berlin, and Lisbon examining the tension between stone permanence and historical erosion.',
     period: '2023 — 2025',
     order: 2,
-    locationContext: 'Venice, Berlin, Rome, Lisbon',
+    locationContext: 'California · Florence · Rome · London',
   },
   {
     id: 'col-chinatown-studies',
     slug: 'chinatown-studies',
-    title: 'Chinatown Studies',
+    title: 'Chinese Cultural Studies',
     subtitle: 'Linguistic topography, vernacular signages, and diaspora spatial memory',
     description: 'An architectural and linguistic documentation project recording vanishing hand-painted Cantonese signboards, clan association facades, and shifting neighborhood demarcations in North American enclaves.',
     period: '2022 — Present',
     order: 3,
-    locationContext: 'Manhattan, San Francisco, Vancouver',
+    locationContext: 'Los Angeles · Atlanta · Zhejiang · Liaoning',
   },
 ];
 
