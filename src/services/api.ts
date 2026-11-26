@@ -206,13 +206,42 @@ export function mapRawToCuratedWork(raw: RawHydratedCuratedWork): CuratedWork {
   };
 }
 
-// Safe response parser that prevents SyntaxError when server returns HTML fallback
+const ACCESS_SESSION_EXPIRED_MESSAGE =
+  'Your Cloudflare Access admin session has expired or requires re-authentication. Reload the page to sign in again, then retry saving.';
+
+function isCloudflareAccessUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  return /cloudflareaccess\.com|\/cdn-cgi\/access\//i.test(url);
+}
+
+// Safe response parser that prevents SyntaxError when server returns HTML fallback or Access redirect
 async function parseApiResponse<T>(res: Response, fallbackError: string): Promise<ApiResponse<T>> {
+  if (
+    res.type === 'opaqueredirect' ||
+    (res.status >= 300 && res.status < 400) ||
+    (res.redirected && isCloudflareAccessUrl(res.url))
+  ) {
+    throw new Error(ACCESS_SESSION_EXPIRED_MESSAGE);
+  }
+
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
+    const bodySnippet = await res.text().catch(() => '');
+    if (
+      res.status === 401 ||
+      res.status === 403 ||
+      /cloudflareaccess|cdn-cgi\/access|cloudflare access/i.test(bodySnippet)
+    ) {
+      throw new Error(ACCESS_SESSION_EXPIRED_MESSAGE);
+    }
     throw new Error(`API returned non-JSON response (${res.status} ${res.statusText}). Endpoint may not be served in current environment.`);
   }
+
   const json: ApiResponse<T> = await res.json();
+  if (res.status === 401 || res.status === 403) {
+    const detail = json.error ? `${json.error}. ` : '';
+    throw new Error(`${detail}${ACCESS_SESSION_EXPIRED_MESSAGE}`);
+  }
   if (!res.ok || !json.success) {
     throw new Error(json.error || fallbackError);
   }
@@ -290,23 +319,36 @@ export const api = {
   },
 
   async updateCollection(id: string, updates: Partial<Collection>): Promise<Collection> {
+    const normalizeOptionalPayload = (val: string | null | undefined): string | null => {
+      if (typeof val !== 'string') return null;
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
     const payload: Partial<RawCollectionRecord> = {};
-    if (updates.title !== undefined) payload.title = updates.title;
-    if (updates.subtitle !== undefined) payload.subtitle = updates.subtitle || null;
-    if (updates.description !== undefined) payload.description = updates.description || null;
-    if (updates.period !== undefined) payload.period = updates.period || null;
-    if (updates.locationContext !== undefined) payload.location_context = updates.locationContext || null;
+    if (updates.title !== undefined) payload.title = updates.title.trim();
+    if (updates.subtitle !== undefined) payload.subtitle = normalizeOptionalPayload(updates.subtitle);
+    if (updates.description !== undefined) payload.description = normalizeOptionalPayload(updates.description);
+    if (updates.period !== undefined) payload.period = normalizeOptionalPayload(updates.period);
+    if (updates.locationContext !== undefined) payload.location_context = normalizeOptionalPayload(updates.locationContext);
     if (updates.order !== undefined) payload.order_index = updates.order;
 
     const res = await fetch(`/api/admin/collections/${encodeURIComponent(id)}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
       credentials: 'same-origin',
+      redirect: 'manual',
       body: JSON.stringify(payload),
     });
 
     const json = await parseApiResponse<RawCollectionRecord>(res, 'Failed to update collection');
-    return mapRecordToCollection(json.data!);
+    if (!json.data) {
+      throw new Error('Server did not return the updated collection record.');
+    }
+    return mapRecordToCollection(json.data);
   },
 
   async reorderCollections(items: { id: string; order: number }[]): Promise<boolean> {

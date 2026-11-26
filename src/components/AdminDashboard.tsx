@@ -239,6 +239,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   }, [editingStudyId, editStudyMediumScope, entries]);
 
   const startEditCollection = (col: (typeof collections)[0]) => {
+    setErrorMessage(null);
     setEditingColId(col.id);
     setEditColTitle(col.title);
     setEditColSubtitle(col.subtitle || '');
@@ -249,21 +250,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
 
   const handleSaveCollectionEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingColId || !editColTitle) return;
+    if (!editingColId || !editColTitle.trim()) return;
     setIsSavingCol(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
     try {
-      await updateCollection(editingColId, {
-        title: editColTitle,
-        subtitle: editColSubtitle,
-        description: editColDesc,
-        period: editColPeriod,
-        locationContext: editColLocationContext.trim() || undefined,
+      const updated = await updateCollection(editingColId, {
+        title: editColTitle.trim(),
+        subtitle: editColSubtitle.trim(),
+        description: editColDesc.trim(),
+        period: editColPeriod.trim(),
+        locationContext: editColLocationContext.trim(),
       });
-      setSuccessMessage(`Collection "${editColTitle}" updated and persisted!`);
+      setSuccessMessage(`Collection "${updated.title}" updated and persisted!`);
       setEditingColId(null);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
-      alert(`Failed to save collection: ${err?.message || 'Error'}`);
+      setErrorMessage(
+        `Failed to save collection: ${err?.message || 'Unable to persist changes to the archive database.'}`
+      );
     } finally {
       setIsSavingCol(false);
     }
@@ -655,12 +660,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
 
         {/* Error Alert Banner */}
         {errorMessage && (
-          <div className="p-4 bg-red-950/20 border border-red-800 text-red-200 text-xs font-mono-archival flex items-center justify-between">
+          <div className="p-4 bg-red-50 border border-red-300 text-red-900 text-xs font-mono-archival flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
               <span>{errorMessage}</span>
             </div>
-            <button onClick={() => setErrorMessage(null)} className="p-1 hover:text-white">
+            <button onClick={() => setErrorMessage(null)} className="p-1 text-red-700 hover:text-red-950">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>

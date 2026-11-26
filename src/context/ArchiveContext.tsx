@@ -58,7 +58,7 @@ interface ArchiveContextType {
   deleteCuratedWork: (id: string) => Promise<void>;
 
   addCollection: (col: Omit<Collection, 'id'>) => Promise<Collection>;
-  updateCollection: (id: string, updates: Partial<Collection>) => Promise<void>;
+  updateCollection: (id: string, updates: Partial<Collection>) => Promise<Collection>;
   deleteCollection: (id: string) => Promise<void>;
   reorderCollections: (orderedCollections: Collection[]) => Promise<void>;
 
@@ -490,18 +490,50 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  const updateCollection = async (id: string, updates: Partial<Collection>): Promise<void> => {
+  const updateCollection = async (id: string, updates: Partial<Collection>): Promise<Collection> => {
     const existing = collections.find((c) => c.id === id);
-    setCollections((prev) =>
-      sortCollections(prev.map((c) => (c.id === id ? { ...c, ...updates } : c)))
-    );
     try {
-      await api.updateCollection(id, {
-        title: updates.title || existing?.title,
+      const persisted = await api.updateCollection(id, {
+        title: updates.title !== undefined ? updates.title : existing?.title,
         ...updates,
       });
+      setCollections((prev) =>
+        sortCollections(prev.map((c) => (c.id === id ? persisted : c)))
+      );
+      return persisted;
     } catch (err) {
-      console.warn('[ArchiveContext] Update saved to local state/fallback only', err);
+      if (isPersistent || process.env.NODE_ENV === 'production') {
+        console.error('[ArchiveContext] Persistent mutation failed for updateCollection:', err);
+        throw err;
+      }
+      console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
+      const normalizeLocalOptional = (
+        value: string | undefined,
+        fallback: string | undefined
+      ): string | undefined => {
+        if (value === undefined) return fallback;
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      };
+      let localUpdated: Collection | undefined;
+      setCollections((prev) =>
+        sortCollections(
+          prev.map((c) => {
+            if (c.id !== id) return c;
+            localUpdated = {
+              ...c,
+              ...updates,
+              title: updates.title !== undefined ? updates.title.trim() : c.title,
+              subtitle: normalizeLocalOptional(updates.subtitle, c.subtitle),
+              description: normalizeLocalOptional(updates.description, c.description) || '',
+              period: normalizeLocalOptional(updates.period, c.period) || '',
+              locationContext: normalizeLocalOptional(updates.locationContext, c.locationContext),
+            };
+            return localUpdated;
+          })
+        )
+      );
+      return localUpdated || ({ ...existing, id, ...updates } as Collection);
     }
   };
 

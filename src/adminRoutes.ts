@@ -294,39 +294,54 @@ export async function handleAdminMutationRoutes(
     const id = decodeURIComponent(collectionMatch[1]);
 
     if (method === 'PUT') {
+      const existingCollection = await env.DB.prepare(
+        'SELECT * FROM collections WHERE id = ?'
+      ).bind(id).first<CollectionRecord>();
+
+      if (!existingCollection) {
+        return errorResponse('Collection not found', 404);
+      }
+
       const body = (await request.json()) as Partial<CollectionRecord>;
-      const title = body.title !== undefined ? body.title.trim() : null;
+      const title = body.title !== undefined ? body.title.trim() : existingCollection.title;
 
       if (body.title !== undefined && !title) {
         return errorResponse('Collection title cannot be empty', 400);
       }
 
+      const subtitle = normalizeNullableText(body.subtitle, existingCollection.subtitle, true);
+      const description = normalizeNullableText(body.description, existingCollection.description, true);
+      const period = normalizeNullableText(body.period, existingCollection.period, true);
+      const location_context = normalizeNullableText(
+        body.location_context,
+        existingCollection.location_context,
+        true
+      );
+      const order_index =
+        typeof body.order_index === 'number' ? body.order_index : existingCollection.order_index;
+
       const now = new Date().toISOString();
 
-      const result = await env.DB.prepare(
+      await env.DB.prepare(
         `UPDATE collections
-         SET title = COALESCE(?, title),
-             subtitle = COALESCE(?, subtitle),
-             description = COALESCE(?, description),
-             period = COALESCE(?, period),
-             location_context = COALESCE(?, location_context),
-             order_index = COALESCE(?, order_index),
+         SET title = ?,
+             subtitle = ?,
+             description = ?,
+             period = ?,
+             location_context = ?,
+             order_index = ?,
              updated_at = ?
          WHERE id = ?`
       ).bind(
         title,
-        body.subtitle ?? null,
-        body.description ?? null,
-        body.period ?? null,
-        body.location_context ?? null,
-        body.order_index ?? null,
+        subtitle,
+        description,
+        period,
+        location_context,
+        order_index,
         now,
         id
       ).run();
-
-      if (result.meta?.changes === 0) {
-        return errorResponse('Collection not found', 404);
-      }
 
       const { results } = await env.DB.prepare(
         'SELECT * FROM collections WHERE id = ?'
