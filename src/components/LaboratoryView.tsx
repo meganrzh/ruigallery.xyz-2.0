@@ -4,7 +4,7 @@ import { AppView, INITIAL_ENTRY_MEDIUMS } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { formatFullDate, compareDatesDesc } from '../utils/dateFormatting';
 import { isImageLedMedium, getEntryPreviewImage, getMediumDefinition, CANONICAL_MEDIUMS } from '../utils/mediumHelpers';
-import { getCropImageStyle } from '../utils/imageCrop';
+import { CroppedImage } from './CroppedImage';
 
 interface LaboratoryViewProps {
   onNavigate: (view: AppView) => void;
@@ -234,11 +234,10 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                                           {previewImg ? (
                                             previewImg.crop ? (
                                               <div className="w-full h-full transition-transform duration-200 group-hover/work:scale-[1.03]">
-                                                <img
+                                                <CroppedImage
                                                   src={previewImg.url}
                                                   alt={previewImg.alt || work.title}
-                                                  className="w-full h-full object-cover"
-                                                  style={getCropImageStyle(previewImg.crop)}
+                                                  crop={previewImg.crop}
                                                   loading="lazy"
                                                 />
                                               </div>
@@ -513,11 +512,10 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                             >
                               {previewImg.crop ? (
                                 <div className="w-full h-full transition-transform duration-300 group-hover:scale-[1.02]">
-                                  <img
+                                  <CroppedImage
                                     src={previewImg.url}
                                     alt={previewImg.alt || entry.title}
-                                    className="w-full h-full object-cover"
-                                    style={getCropImageStyle(previewImg.crop)}
+                                    crop={previewImg.crop}
                                     loading="lazy"
                                   />
                                 </div>

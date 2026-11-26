@@ -457,10 +457,14 @@ export function sanitizeCoverImageCrop(raw: unknown): StoredImageCrop | null {
   if (!Number.isFinite(zoom) || !Number.isFinite(x) || !Number.isFinite(y)) {
     return null;
   }
+  const round2 = (v: number) => {
+    const r = Number(v.toFixed(2));
+    return Object.is(r, -0) ? 0 : r;
+  };
   return {
-    zoom: Number(Math.max(1.0, Math.min(3.0, zoom)).toFixed(2)),
-    x: Math.round(Math.max(-100, Math.min(100, x))),
-    y: Math.round(Math.max(-100, Math.min(100, y))),
+    zoom: round2(Math.max(1.0, Math.min(3.0, zoom))),
+    x: round2(Math.max(-1000, Math.min(1000, x))),
+    y: round2(Math.max(-1000, Math.min(1000, y))),
   };
 }
 

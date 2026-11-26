@@ -3,7 +3,7 @@ import { ArrowUpRight, BookOpen, Compass, ExternalLink } from 'lucide-react';
 import { CuratedWork, AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { formatFullDate, formatYear } from '../utils/dateFormatting';
-import { getCropImageStyle } from '../utils/imageCrop';
+import { CroppedImage } from './CroppedImage';
 
 interface CuratedEditorialGridProps {
   onNavigate: (view: AppView) => void;
@@ -127,12 +127,10 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
                   {dominantWork.coverImageCrop ? (
                     <div className="w-full aspect-[4/3] max-h-[640px] overflow-hidden">
                       <div className="w-full h-full transition-transform duration-700 group-hover:scale-[1.01]">
-                        <img
+                        <CroppedImage
                           src={dominantWork.coverImage}
                           alt={dominantWork.coverImageAlt || dominantWork.title}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                          style={getCropImageStyle(dominantWork.coverImageCrop)}
+                          crop={dominantWork.coverImageCrop}
                         />
                       </div>
                     </div>
@@ -230,12 +228,10 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
                   {work.coverImageCrop ? (
                     <div className="w-full h-64 sm:h-72 overflow-hidden">
                       <div className="w-full h-full transition-transform duration-500 group-hover:scale-[1.02]">
-                        <img
+                        <CroppedImage
                           src={work.coverImage}
                           alt={work.coverImageAlt || work.title}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                          style={getCropImageStyle(work.coverImageCrop)}
+                          crop={work.coverImageCrop}
                         />
                       </div>
                     </div>

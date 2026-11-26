@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { GalleryImage, GalleryDisplay } from '../types';
-import { getCropImageStyle } from '../utils/imageCrop';
+import { CroppedImage } from './CroppedImage';
 
 export interface GalleryRendererProps {
   images: GalleryImage[];
@@ -89,16 +89,12 @@ export const GalleryRenderer: React.FC<GalleryRendererProps> = ({
         {/* Fixed Responsive Viewing Frame (4:3 aspect ratio) */}
         <div className="border border-[#E5E3DB] bg-[#F4F3EE] w-full aspect-[4/3] max-h-[72vh] relative overflow-hidden flex items-center justify-center select-none">
           {active.crop ? (
-            <div className="w-full h-full overflow-hidden flex items-center justify-center relative">
-              <img
-                key={active.url}
-                src={active.url}
-                alt={active.alt || `Photograph ${currentIndex + 1} of ${validImages.length}`}
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-cover select-none pointer-events-none"
-                style={getCropImageStyle(active.crop)}
-              />
-            </div>
+            <CroppedImage
+              key={active.url}
+              src={active.url}
+              alt={active.alt || `Photograph ${currentIndex + 1} of ${validImages.length}`}
+              crop={active.crop}
+            />
           ) : (
             <img
               key={active.url}

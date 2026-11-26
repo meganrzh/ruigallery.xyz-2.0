@@ -5,7 +5,7 @@ import { EntryBodyRenderer } from './EntryBodyRenderer';
 import { EntryMetadataHeader } from './EntryMetadataHeader';
 import { formatFullDate } from '../utils/dateFormatting';
 import { isImageLedMedium } from '../utils/mediumHelpers';
-import { getCropImageStyle } from '../utils/imageCrop';
+import { CroppedImage } from './CroppedImage';
 
 interface EntryReaderPreviewProps {
   entry: Partial<Entry> & {
@@ -120,11 +120,10 @@ export const EntryReaderPreview: React.FC<EntryReaderPreviewProps> = ({
               <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-2 flex items-center justify-center">
                 {fullEntry.coverImageCrop ? (
                   <div className="w-full aspect-[4/3] max-h-[560px] overflow-hidden">
-                    <img
+                    <CroppedImage
                       src={fullEntry.coverImage}
                       alt={fullEntry.coverImageAlt || fullEntry.title}
-                      className="w-full h-full object-cover"
-                      style={getCropImageStyle(fullEntry.coverImageCrop)}
+                      crop={fullEntry.coverImageCrop}
                     />
                   </div>
                 ) : (

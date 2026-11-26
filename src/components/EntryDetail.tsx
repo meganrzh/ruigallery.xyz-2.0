@@ -5,7 +5,7 @@ import { useArchive } from '../context/ArchiveContext';
 import { EntryMetadataHeader } from './EntryMetadataHeader';
 import { EntryBodyRenderer } from './EntryBodyRenderer';
 import { isImageLedMedium } from '../utils/mediumHelpers';
-import { getCropImageStyle } from '../utils/imageCrop';
+import { CroppedImage } from './CroppedImage';
 
 interface EntryDetailProps {
   slug: string;
@@ -114,11 +114,10 @@ export const EntryDetail: React.FC<EntryDetailProps> = ({ slug, onNavigate }) =>
             <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-2 flex items-center justify-center">
               {entry.coverImageCrop ? (
                 <div className="w-full aspect-[4/3] max-h-[560px] overflow-hidden">
-                  <img
+                  <CroppedImage
                     src={entry.coverImage}
                     alt={entry.coverImageAlt || entry.title}
-                    className="w-full h-full object-cover"
-                    style={getCropImageStyle(entry.coverImageCrop)}
+                    crop={entry.coverImageCrop}
                   />
                 </div>
               ) : (

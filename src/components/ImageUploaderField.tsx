@@ -10,8 +10,9 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { ImageCrop } from '../types';
-import { formatCropLabel, getCropImageStyle } from '../utils/imageCrop';
+import { formatCropLabel } from '../utils/imageCrop';
 import { ImageCropModal } from './ImageCropModal';
+import { CroppedImage } from './CroppedImage';
 
 export interface ImageUploaderFieldProps {
   value: string;
@@ -246,15 +247,25 @@ export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center space-x-3 min-w-0">
               <div className="w-20 h-20 bg-[#EAE8E0] border border-[#E5E3DB] overflow-hidden shrink-0 flex items-center justify-center relative">
-                <img
-                  src={value}
-                  alt="Thumbnail preview"
-                  className="w-full h-full object-cover"
-                  style={enableCrop && crop ? getCropImageStyle(crop) : undefined}
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
+                {enableCrop && crop ? (
+                  <CroppedImage
+                    src={value}
+                    alt="Thumbnail preview"
+                    crop={crop}
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <img
+                    src={value}
+                    alt="Thumbnail preview"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                )}
               </div>
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-1.5">
