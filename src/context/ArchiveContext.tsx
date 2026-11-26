@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   Collection,
   Study,
@@ -19,6 +19,12 @@ import {
 } from '../data/initialData';
 import { api } from '../services/api';
 import { formatFullDate, formatYear, compareDatesDesc } from '../utils/dateFormatting';
+import {
+  applySymmetricRelatedEntries,
+  hydrateBidirectionalEntries,
+  normalizeRelatedEntryIds,
+  removeEntryAndCrossReferences,
+} from '../utils/crossReferences';
 
 interface ArchiveContextType {
   collections: Collection[];
@@ -72,6 +78,7 @@ interface ArchiveContextType {
   updateAboutData: (updates: Partial<AboutData>) => void;
   resetToDefaultData: () => void;
   refetchFromPersistentStore: () => Promise<void>;
+  refetchAdminArchive: () => Promise<boolean>;
 }
 
 const STORAGE_KEYS = {
@@ -116,7 +123,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Entries, Threads, and Curated Works: Single source of truth is D1/API.
   // Initial fallback to hardcoded seed so there is no layout jump before the initial API fetch completes.
-  const [entries, setEntries] = useState<Entry[]>(INITIAL_ENTRIES);
+  const [entries, setEntries] = useState<Entry[]>(() => hydrateBidirectionalEntries(INITIAL_ENTRIES));
   const [threads, setThreads] = useState<Thread[]>(INITIAL_THREADS);
   const [curatedWorks, setCuratedWorks] = useState<CuratedWork[]>(() => sortCuratedWorks(INITIAL_CURATED_WORKS));
 
@@ -138,12 +145,49 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   });
 
+  const adminHydratedRef = useRef(false);
+
   // Initial persistent fetch from D1 / API
   const refetchFromPersistentStore = useCallback(async () => {
     try {
       setIsLoading(true);
-      const persistent = await api.getArchive();
+      const startedAsAdmin = adminHydratedRef.current;
+      const persistent = startedAsAdmin
+        ? await api.getAdminArchive()
+        : await api.getArchive();
+      if (!persistent) return;
+      // Never let a slower initial public /api/archive response overwrite authenticated Admin hydration
+      if (!startedAsAdmin && adminHydratedRef.current) return;
+      if (persistent.collections && persistent.collections.length > 0) {
+        setCollections(sortCollections(persistent.collections));
+      }
+      if (persistent.studies && persistent.studies.length > 0) {
+        setStudies(persistent.studies);
+      }
+      if (persistent.threads && persistent.threads.length > 0) {
+        setThreads(persistent.threads);
+      }
+      if (persistent.entries && persistent.entries.length > 0) {
+        setEntries(hydrateBidirectionalEntries(persistent.entries));
+      }
+      if (persistent.curatedWorks && persistent.curatedWorks.length > 0) {
+        setCuratedWorks(sortCuratedWorks(persistent.curatedWorks));
+      }
+      setIsPersistent(true);
+    } catch (err) {
+      console.warn('[ArchiveContext] Note: Operating in local fallback mode', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Authenticated Admin fetch from Cloudflare Access–protected /api/admin/archive
+  const refetchAdminArchive = useCallback(async (): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      const persistent = await api.getAdminArchive();
       if (persistent) {
+        adminHydratedRef.current = true;
         if (persistent.collections && persistent.collections.length > 0) {
           setCollections(sortCollections(persistent.collections));
         }
@@ -154,15 +198,18 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setThreads(persistent.threads);
         }
         if (persistent.entries && persistent.entries.length > 0) {
-          setEntries(persistent.entries);
+          setEntries(hydrateBidirectionalEntries(persistent.entries));
         }
         if (persistent.curatedWorks && persistent.curatedWorks.length > 0) {
           setCuratedWorks(sortCuratedWorks(persistent.curatedWorks));
         }
         setIsPersistent(true);
+        return true;
       }
+      return false;
     } catch (err) {
-      console.warn('[ArchiveContext] Note: Operating in local fallback mode', err);
+      console.warn('[ArchiveContext] Failed to hydrate authenticated Admin archive:', err);
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -220,6 +267,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         coverImage: entry.coverImage || '',
         coverImageCaption: entry.coverImageCaption,
         coverImageAlt: entry.coverImageAlt,
+        coverImageCrop: entry.coverImage && entry.coverImageCrop ? entry.coverImageCrop : undefined,
         excerpt: entry.excerpt || entry.summary || '',
         bodyBlocks: entry.blocks as any,
         metadata: entry.metadata,
@@ -269,12 +317,16 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const getRelatedEntriesForEntry = (entry: Entry) => {
     if (!entry.relatedEntryIds || entry.relatedEntryIds.length === 0) return [];
-    return entries.filter((e) => entry.relatedEntryIds?.includes(e.id) && e.visibility === 'published');
+    const relatedSet = new Set(normalizeRelatedEntryIds(entry.relatedEntryIds, entry.id));
+    if (relatedSet.size === 0) return [];
+    return entries.filter((e) => e.id !== entry.id && relatedSet.has(e.id) && e.visibility === 'published');
   };
 
   const getRelatedEntriesForWork = (work: CuratedWork) => {
     if (!work.relatedEntryIds || work.relatedEntryIds.length === 0) return [];
-    return entries.filter((e) => work.relatedEntryIds?.includes(e.id) && e.visibility === 'published');
+    const relatedSet = new Set(normalizeRelatedEntryIds(work.relatedEntryIds, work.id));
+    if (relatedSet.size === 0) return [];
+    return entries.filter((e) => e.id !== work.id && relatedSet.has(e.id) && e.visibility === 'published');
   };
 
   const getRelatedStudiesForWork = (work: CuratedWork) => {
@@ -315,6 +367,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
           coverImage: entry.coverImage || '',
           coverImageCaption: entry.coverImageCaption,
           coverImageAlt: entry.coverImageAlt,
+          coverImageCrop: entry.coverImage && entry.coverImageCrop ? entry.coverImageCrop : undefined,
           excerpt: entry.excerpt || entry.summary || '',
           bodyBlocks: entry.blocks as any,
           metadata: entry.metadata,
@@ -346,13 +399,19 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Mutations
   const addEntry = async (entryData: Omit<Entry, 'id'>): Promise<Entry> => {
     const tempId = `entry-${Date.now()}`;
-    const fallbackEntry: Entry = {
+    const sanitizedData: Omit<Entry, 'id'> = {
       ...entryData,
+      relatedEntryIds: normalizeRelatedEntryIds(entryData.relatedEntryIds),
+    };
+    const fallbackEntry: Entry = {
+      ...sanitizedData,
+      coverImageCrop:
+        sanitizedData.coverImage && sanitizedData.coverImageCrop ? sanitizedData.coverImageCrop : undefined,
       id: tempId,
     };
     try {
-      const created = await api.createEntry(entryData);
-      setEntries((prev) => [created, ...prev]);
+      const created = await api.createEntry(sanitizedData);
+      setEntries((prev) => applySymmetricRelatedEntries(prev, created, true));
       return created;
     } catch (err) {
       if (isPersistent || process.env.NODE_ENV === 'production') {
@@ -360,15 +419,19 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         throw err;
       }
       console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
-      setEntries((prev) => [fallbackEntry, ...prev]);
+      setEntries((prev) => applySymmetricRelatedEntries(prev, fallbackEntry, true));
       return fallbackEntry;
     }
   };
 
   const updateEntry = async (id: string, updates: Partial<Entry>): Promise<Entry> => {
+    const sanitizedUpdates: Partial<Entry> =
+      updates.relatedEntryIds !== undefined
+        ? { ...updates, relatedEntryIds: normalizeRelatedEntryIds(updates.relatedEntryIds, id) }
+        : updates;
     try {
-      const updated = await api.updateEntry(id, updates);
-      setEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
+      const updated = await api.updateEntry(id, sanitizedUpdates);
+      setEntries((prev) => applySymmetricRelatedEntries(prev, updated, false));
       return updated;
     } catch (err) {
       if (isPersistent || process.env.NODE_ENV === 'production') {
@@ -377,30 +440,53 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       console.warn('[ArchiveContext] Dev preview: API unavailable, updating local state for session preview only', err);
       let localUpdated: Entry | undefined;
-      setEntries((prev) =>
-        prev.map((e) => {
-          if (e.id === id) {
-            localUpdated = { ...e, ...updates };
-            return localUpdated;
-          }
-          return e;
-        })
-      );
-      return localUpdated || ({ id, ...updates } as Entry);
+      setEntries((prev) => {
+        const existing = prev.find((e) => e.id === id);
+        if (!existing) return prev;
+        const nextCoverImage =
+          sanitizedUpdates.coverImage !== undefined ? sanitizedUpdates.coverImage : existing.coverImage;
+        let nextCrop = existing.coverImageCrop || undefined;
+        if (!nextCoverImage) {
+          nextCrop = undefined;
+        } else if (sanitizedUpdates.coverImageCrop !== undefined) {
+          nextCrop = sanitizedUpdates.coverImageCrop || undefined;
+        } else if (sanitizedUpdates.coverImage !== undefined && sanitizedUpdates.coverImage !== existing.coverImage) {
+          nextCrop = undefined;
+        }
+        localUpdated = {
+          ...existing,
+          ...sanitizedUpdates,
+          relatedEntryIds:
+            sanitizedUpdates.relatedEntryIds !== undefined
+              ? sanitizedUpdates.relatedEntryIds
+              : existing.relatedEntryIds || [],
+          coverImageCrop: nextCrop,
+        };
+        return applySymmetricRelatedEntries(prev, localUpdated, false);
+      });
+      return localUpdated || ({ id, ...sanitizedUpdates } as Entry);
     }
   };
 
   const deleteEntry = async (id: string): Promise<void> => {
+    const stripDeletedFromWorks = (prev: CuratedWork[]) =>
+      prev.map((w) =>
+        w.relatedEntryIds && w.relatedEntryIds.includes(id)
+          ? { ...w, relatedEntryIds: w.relatedEntryIds.filter((eid) => eid !== id) }
+          : w
+      );
     try {
       await api.deleteEntry(id);
-      setEntries((prev) => prev.filter((e) => e.id !== id));
+      setEntries((prev) => removeEntryAndCrossReferences(prev, id));
+      setCuratedWorks(stripDeletedFromWorks);
     } catch (err) {
       if (isPersistent || process.env.NODE_ENV === 'production') {
         console.error('[ArchiveContext] Persistent mutation failed for deleteEntry:', err);
         throw err;
       }
       console.warn('[ArchiveContext] Dev preview: API unavailable, removing from local state', err);
-      setEntries((prev) => prev.filter((e) => e.id !== id));
+      setEntries((prev) => removeEntryAndCrossReferences(prev, id));
+      setCuratedWorks(stripDeletedFromWorks);
     }
   };
 
@@ -777,6 +863,7 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateAboutData,
         resetToDefaultData,
         refetchFromPersistentStore,
+        refetchAdminArchive,
       }}
     >
       {children}

@@ -3,8 +3,10 @@
  * Connects frontend components to Cloudflare Pages Functions / Worker and D1 database.
  */
 
-import { Collection, Study, Thread, Entry, EntryBlock, RuiRevision, CuratedWork, CuratedWorkBlock } from '../types';
+import { Collection, Study, Thread, Entry, EntryBlock, RuiRevision, CuratedWork, CuratedWorkBlock, ImageCrop } from '../types';
 import { formatFullDate } from '../utils/dateFormatting';
+import { normalizeImageCrop } from '../utils/imageCrop';
+import { normalizeRelatedEntryIds } from '../utils/crossReferences';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -70,6 +72,7 @@ export interface RawHydratedEntry {
   coverImage?: string | null;
   coverImageCaption?: string | null;
   coverImageAlt?: string | null;
+  coverImageCrop?: ImageCrop | null;
   blocks: EntryBlock[];
   metadata?: Record<string, string> | null;
   threadIds: string[];
@@ -140,9 +143,10 @@ export function mapRawToEntry(raw: RawHydratedEntry): Entry {
     coverImage: raw.coverImage || undefined,
     coverImageCaption: raw.coverImageCaption || undefined,
     coverImageAlt: raw.coverImageAlt || undefined,
+    coverImageCrop: raw.coverImage ? normalizeImageCrop(raw.coverImageCrop) : undefined,
     threadIds: raw.threadIds || [],
     relatedStudyIds: raw.relatedStudyIds || [],
-    relatedEntryIds: raw.relatedEntryIds || [],
+    relatedEntryIds: normalizeRelatedEntryIds(raw.relatedEntryIds, raw.id),
     summary: raw.summary || undefined,
     excerpt: raw.excerpt || undefined,
     blocks: raw.blocks || [],
@@ -285,6 +289,49 @@ export const api = {
       const res = await fetch('/api/archive', {
         headers: { Accept: 'application/json' },
         credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!res.ok) return null;
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) return null;
+
+      const json: ApiResponse<{
+        collections: RawCollectionRecord[];
+        studies: RawStudyRecord[];
+        threads: RawThreadRecord[];
+        entries: RawHydratedEntry[];
+        curatedWorks: RawHydratedCuratedWork[];
+      }> = await res.json();
+      if (!json.success || !json.data) return null;
+
+      return {
+        collections: (json.data.collections || []).map(mapRecordToCollection),
+        studies: (json.data.studies || []).map(mapRecordToStudy),
+        threads: (json.data.threads || []).map(mapRawToThread),
+        entries: (json.data.entries || []).map(mapRawToEntry),
+        curatedWorks: (json.data.curatedWorks || []).map(mapRawToCuratedWork),
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Fetch complete authenticated Admin archive (including draft and hidden Entries & full cross-references)
+   * via Cloudflare Access–protected /api/admin/archive.
+   */
+  async getAdminArchive(): Promise<{
+    collections: Collection[];
+    studies: Study[];
+    threads: Thread[];
+    entries: Entry[];
+    curatedWorks: CuratedWork[];
+  } | null> {
+    try {
+      const res = await fetch('/api/admin/archive', {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
       });
       if (!res.ok) return null;
       const contentType = res.headers.get('content-type') || '';

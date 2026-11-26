@@ -4,6 +4,7 @@ import { AppView, INITIAL_ENTRY_MEDIUMS } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { formatFullDate, compareDatesDesc } from '../utils/dateFormatting';
 import { isImageLedMedium, getEntryPreviewImage, getMediumDefinition, CANONICAL_MEDIUMS } from '../utils/mediumHelpers';
+import { getCropImageStyle } from '../utils/imageCrop';
 
 interface LaboratoryViewProps {
   onNavigate: (view: AppView) => void;
@@ -224,15 +225,31 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
                                         className="group/work cursor-pointer text-left flex flex-col"
                                         title={`View ${work.title}`}
                                       >
-                                        {/* Compact Uncropped Plate */}
-                                        <div className="w-full h-20 bg-[#F4F3EE] border border-[#E5E3DB] group-hover/work:border-[#141413] flex items-center justify-center p-1 overflow-hidden transition-colors">
+                                        {/* Compact Plate (cropped cover fills frame; uncropped keeps natural object-contain) */}
+                                        <div
+                                          className={`w-full h-20 bg-[#F4F3EE] border border-[#E5E3DB] group-hover/work:border-[#141413] flex items-center justify-center overflow-hidden transition-colors ${
+                                            previewImg?.crop ? '' : 'p-1'
+                                          }`}
+                                        >
                                           {previewImg ? (
-                                            <img
-                                              src={previewImg.url}
-                                              alt={previewImg.alt || work.title}
-                                              className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-200 group-hover/work:scale-[1.03]"
-                                              loading="lazy"
-                                            />
+                                            previewImg.crop ? (
+                                              <div className="w-full h-full transition-transform duration-200 group-hover/work:scale-[1.03]">
+                                                <img
+                                                  src={previewImg.url}
+                                                  alt={previewImg.alt || work.title}
+                                                  className="w-full h-full object-cover"
+                                                  style={getCropImageStyle(previewImg.crop)}
+                                                  loading="lazy"
+                                                />
+                                              </div>
+                                            ) : (
+                                              <img
+                                                src={previewImg.url}
+                                                alt={previewImg.alt || work.title}
+                                                className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-200 group-hover/work:scale-[1.03]"
+                                                loading="lazy"
+                                              />
+                                            )
                                           ) : (
                                             <span className="text-[8px] font-mono-archival text-[#8C8C82] text-center px-1 uppercase">
                                               Text
@@ -489,13 +506,29 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({ onNavigate }) =>
 
                           {/* Visual plate for Image-Led Medium entries */}
                           {previewImg && (
-                            <div className="w-full sm:w-40 md:w-48 h-36 shrink-0 bg-[#F4F3EE] border border-[#E5E3DB] p-2 flex items-center justify-center overflow-hidden">
-                              <img
-                                src={previewImg.url}
-                                alt={previewImg.alt || entry.title}
-                                className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-300 group-hover:scale-[1.02]"
-                                loading="lazy"
-                              />
+                            <div
+                              className={`w-full sm:w-40 md:w-48 h-36 shrink-0 bg-[#F4F3EE] border border-[#E5E3DB] flex items-center justify-center overflow-hidden ${
+                                previewImg.crop ? '' : 'p-2'
+                              }`}
+                            >
+                              {previewImg.crop ? (
+                                <div className="w-full h-full transition-transform duration-300 group-hover:scale-[1.02]">
+                                  <img
+                                    src={previewImg.url}
+                                    alt={previewImg.alt || entry.title}
+                                    className="w-full h-full object-cover"
+                                    style={getCropImageStyle(previewImg.crop)}
+                                    loading="lazy"
+                                  />
+                                </div>
+                              ) : (
+                                <img
+                                  src={previewImg.url}
+                                  alt={previewImg.alt || entry.title}
+                                  className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-300 group-hover:scale-[1.02]"
+                                  loading="lazy"
+                                />
+                              )}
                             </div>
                           )}
                         </article>

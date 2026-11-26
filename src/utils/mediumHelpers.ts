@@ -1,4 +1,5 @@
-import { Entry } from '../types';
+import { Entry, ImageCrop } from '../types';
+import { normalizeImageCrop } from './imageCrop';
 
 export interface MediumDefinition {
   name: string;
@@ -93,12 +94,13 @@ export interface EntryPreviewImage {
   url: string;
   alt?: string;
   caption?: string;
+  crop?: ImageCrop;
 }
 
 /**
  * Deterministically resolve an entry's preview image for archival showcases:
- * 1. coverImage, if present
- * 2. otherwise first valid image block in Entry.blocks
+ * 1. coverImage, if present (including optional coverImageCrop)
+ * 2. otherwise first valid image block in Entry.blocks (never inherits coverImageCrop)
  * 3. if neither exists, returns null for graceful text-only fallback
  */
 export function getEntryPreviewImage(entry: Entry): EntryPreviewImage | null {
@@ -108,6 +110,7 @@ export function getEntryPreviewImage(entry: Entry): EntryPreviewImage | null {
       url: entry.coverImage.trim(),
       alt: entry.coverImageAlt || entry.title,
       caption: entry.coverImageCaption,
+      crop: normalizeImageCrop(entry.coverImageCrop),
     };
   }
 

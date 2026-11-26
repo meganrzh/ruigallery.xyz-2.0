@@ -12,6 +12,7 @@ import type {
   CuratedWorkRecord,
   CuratedWorkRelatedStudyRecord,
   CuratedWorkRelatedEntryRecord,
+  StoredImageCrop,
 } from './worker';
 import {
   jsonResponse,
@@ -19,7 +20,13 @@ import {
   hydrateEntry,
   hydrateCuratedWork,
   normalizeNullableText,
+  sanitizeCoverImageCrop,
 } from './worker';
+import {
+  buildBidirectionalRelatedEntriesMap,
+  canonicalEntryPair,
+  normalizeRelatedEntryIds,
+} from './utils/crossReferences';
 
 export interface ImageValidationResult {
   valid: boolean;
@@ -794,6 +801,7 @@ export async function handleAdminMutationRoutes(
       coverImage?: string | null;
       coverImageCaption?: string | null;
       coverImageAlt?: string | null;
+      coverImageCrop?: StoredImageCrop | null;
       blocks?: unknown[];
       metadata?: Record<string, string> | null;
       threadIds?: string[];
@@ -871,9 +879,34 @@ export async function handleAdminMutationRoutes(
     const coverImageCaption = body.coverImageCaption?.trim() || null;
     const coverImageAlt = body.coverImageAlt?.trim() || null;
     const blocksJson = JSON.stringify(body.blocks || []);
-    const metadataJson = JSON.stringify(body.metadata || {});
+    const postMetadataObj: Record<string, unknown> = { ...(body.metadata || {}) };
+    delete postMetadataObj.coverImageCrop;
+    const validPostCrop = coverImage ? sanitizeCoverImageCrop(body.coverImageCrop) : null;
+    if (validPostCrop) {
+      postMetadataObj.coverImageCrop = validPostCrop;
+    }
+    const metadataJson = JSON.stringify(postMetadataObj);
     const visibility = body.visibility || 'published';
     const order_index = typeof body.order === 'number' ? body.order : 0;
+
+    // Validate and sanitize symmetric cross-referenced Entry IDs before batching writes
+    const sanitizedRelatedEntryIds = Array.isArray(body.relatedEntryIds)
+      ? normalizeRelatedEntryIds(body.relatedEntryIds, id)
+      : [];
+    if (sanitizedRelatedEntryIds.length > 0) {
+      const placeholders = sanitizedRelatedEntryIds.map(() => '?').join(', ');
+      const existingTargets = await env.DB.prepare(
+        `SELECT id FROM entries WHERE id IN (${placeholders})`
+      )
+        .bind(...sanitizedRelatedEntryIds)
+        .all<{ id: string }>();
+      const validTargetIds = new Set((existingTargets.results || []).map((r) => r.id));
+      for (const rId of sanitizedRelatedEntryIds) {
+        if (!validTargetIds.has(rId)) {
+          return errorResponse(`Referenced cross-referenced entry '${rId}' does not exist`, 400);
+        }
+      }
+    }
 
     const batchStatements: D1PreparedStatement[] = [
       env.DB.prepare(
@@ -947,10 +980,14 @@ export async function handleAdminMutationRoutes(
       }
     }
 
-    if (Array.isArray(body.relatedEntryIds)) {
-      for (const rId of body.relatedEntryIds) {
+    if (sanitizedRelatedEntryIds.length > 0) {
+      for (const rId of sanitizedRelatedEntryIds) {
+        const pair = canonicalEntryPair(id, rId);
+        if (!pair) continue;
         batchStatements.push(
-          env.DB.prepare('INSERT OR IGNORE INTO entry_related_entries (entry_id, related_entry_id) VALUES (?, ?)').bind(id, rId)
+          env.DB.prepare(
+            'INSERT OR IGNORE INTO entry_related_entries (entry_id, related_entry_id) VALUES (?, ?)'
+          ).bind(pair[0], pair[1])
         );
       }
     }
@@ -1044,7 +1081,7 @@ export async function handleAdminMutationRoutes(
     relStudiesMap.set(id, body.relatedStudyIds || []);
 
     const relEntriesMap = new Map<string, string[]>();
-    relEntriesMap.set(id, body.relatedEntryIds || []);
+    relEntriesMap.set(id, sanitizedRelatedEntryIds);
 
     const hydrated = hydrateEntry(insertedEntry, studyMap, threadsMap, relStudiesMap, relEntriesMap);
 
@@ -1089,6 +1126,7 @@ export async function handleAdminMutationRoutes(
         coverImage?: string | null;
         coverImageCaption?: string | null;
         coverImageAlt?: string | null;
+        coverImageCrop?: StoredImageCrop | null;
         blocks?: unknown[];
         metadata?: Record<string, string> | null;
         threadIds?: string[];
@@ -1203,9 +1241,65 @@ export async function handleAdminMutationRoutes(
       const coverImageCaption = normalizeNullableText(body.coverImageCaption, existingEntry.cover_image_caption, true);
       const coverImageAlt = normalizeNullableText(body.coverImageAlt, existingEntry.cover_image_alt, true);
       const blocksJson = body.blocks !== undefined ? JSON.stringify(body.blocks) : existingEntry.blocks;
-      const metadataJson = body.metadata !== undefined ? JSON.stringify(body.metadata) : existingEntry.metadata;
+
+      let existingMetadataObj: Record<string, unknown> = {};
+      try {
+        const parsedExisting =
+          typeof existingEntry.metadata === 'string'
+            ? JSON.parse(existingEntry.metadata)
+            : (existingEntry.metadata || {});
+        if (parsedExisting && typeof parsedExisting === 'object' && !Array.isArray(parsedExisting)) {
+          existingMetadataObj = parsedExisting as Record<string, unknown>;
+        }
+      } catch {
+        existingMetadataObj = {};
+      }
+
+      const mergedMetadataObj: Record<string, unknown> =
+        body.metadata !== undefined ? { ...(body.metadata || {}) } : { ...existingMetadataObj };
+      delete mergedMetadataObj.coverImageCrop;
+
+      let nextCoverImageCrop: StoredImageCrop | null = null;
+      if (!coverImage) {
+        // Cover image cleared -> always drop crop settings
+        nextCoverImageCrop = null;
+      } else if (body.coverImageCrop !== undefined) {
+        // Explicit crop update or explicit null reset
+        nextCoverImageCrop = sanitizeCoverImageCrop(body.coverImageCrop);
+      } else if (body.coverImage !== undefined && coverImage !== existingEntry.cover_image) {
+        // Cover image replaced without specifying a new crop -> reset previous crop
+        nextCoverImageCrop = null;
+      } else {
+        // Partial update omitting coverImageCrop -> preserve existing crop
+        nextCoverImageCrop = sanitizeCoverImageCrop(existingMetadataObj.coverImageCrop);
+      }
+
+      if (nextCoverImageCrop) {
+        mergedMetadataObj.coverImageCrop = nextCoverImageCrop;
+      }
+      const metadataJson = JSON.stringify(mergedMetadataObj);
       const visibility = body.visibility !== undefined ? body.visibility : existingEntry.visibility;
       const order_index = typeof body.order === 'number' ? body.order : existingEntry.order_index;
+
+      // Validate and sanitize symmetric cross-referenced Entry IDs when explicitly provided
+      const shouldUpdateRelatedEntries = Array.isArray(body.relatedEntryIds);
+      const sanitizedRelatedEntryIds = shouldUpdateRelatedEntries
+        ? normalizeRelatedEntryIds(body.relatedEntryIds, id)
+        : [];
+      if (shouldUpdateRelatedEntries && sanitizedRelatedEntryIds.length > 0) {
+        const placeholders = sanitizedRelatedEntryIds.map(() => '?').join(', ');
+        const existingTargets = await env.DB.prepare(
+          `SELECT id FROM entries WHERE id IN (${placeholders})`
+        )
+          .bind(...sanitizedRelatedEntryIds)
+          .all<{ id: string }>();
+        const validTargetIds = new Set((existingTargets.results || []).map((r) => r.id));
+        for (const rId of sanitizedRelatedEntryIds) {
+          if (!validTargetIds.has(rId)) {
+            return errorResponse(`Referenced cross-referenced entry '${rId}' does not exist`, 400);
+          }
+        }
+      }
 
       const batchStatements: D1PreparedStatement[] = [
         env.DB.prepare(
@@ -1264,11 +1358,19 @@ export async function handleAdminMutationRoutes(
         }
       }
 
-      if (Array.isArray(body.relatedEntryIds)) {
-        batchStatements.push(env.DB.prepare('DELETE FROM entry_related_entries WHERE entry_id = ?').bind(id));
-        for (const rId of body.relatedEntryIds) {
+      if (shouldUpdateRelatedEntries) {
+        batchStatements.push(
+          env.DB.prepare(
+            'DELETE FROM entry_related_entries WHERE entry_id = ? OR related_entry_id = ?'
+          ).bind(id, id)
+        );
+        for (const rId of sanitizedRelatedEntryIds) {
+          const pair = canonicalEntryPair(id, rId);
+          if (!pair) continue;
           batchStatements.push(
-            env.DB.prepare('INSERT OR IGNORE INTO entry_related_entries (entry_id, related_entry_id) VALUES (?, ?)').bind(id, rId)
+            env.DB.prepare(
+              'INSERT OR IGNORE INTO entry_related_entries (entry_id, related_entry_id) VALUES (?, ?)'
+            ).bind(pair[0], pair[1])
           );
         }
       }
@@ -1289,7 +1391,11 @@ export async function handleAdminMutationRoutes(
           env.DB.prepare('SELECT id, collection_id FROM studies').all<{ id: string; collection_id: string }>(),
           env.DB.prepare('SELECT thread_id FROM entry_threads WHERE entry_id = ?').bind(id).all<{ thread_id: string }>(),
           env.DB.prepare('SELECT study_id FROM entry_related_studies WHERE entry_id = ?').bind(id).all<{ study_id: string }>(),
-          env.DB.prepare('SELECT related_entry_id FROM entry_related_entries WHERE entry_id = ?').bind(id).all<{ related_entry_id: string }>(),
+          env.DB.prepare(
+            'SELECT entry_id, related_entry_id FROM entry_related_entries WHERE entry_id = ? OR related_entry_id = ?'
+          )
+            .bind(id, id)
+            .all<EntryRelatedEntryRecord>(),
         ]);
 
       if (!updatedEntry) {
@@ -1307,8 +1413,7 @@ export async function handleAdminMutationRoutes(
       const relStudiesMap = new Map<string, string[]>();
       relStudiesMap.set(id, (relStudiesResult.results || []).map((r) => r.study_id));
 
-      const relEntriesMap = new Map<string, string[]>();
-      relEntriesMap.set(id, (relEntriesResult.results || []).map((r) => r.related_entry_id));
+      const relEntriesMap = buildBidirectionalRelatedEntriesMap(relEntriesResult.results || []);
 
       const hydrated = hydrateEntry(updatedEntry, studyMap, threadsMap, relStudiesMap, relEntriesMap);
 

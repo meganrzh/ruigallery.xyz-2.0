@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { GalleryImage, GalleryDisplay } from '../types';
+import { getCropImageStyle } from '../utils/imageCrop';
 
 export interface GalleryRendererProps {
   images: GalleryImage[];
@@ -95,10 +96,7 @@ export const GalleryRenderer: React.FC<GalleryRendererProps> = ({
                 alt={active.alt || `Photograph ${currentIndex + 1} of ${validImages.length}`}
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover select-none pointer-events-none"
-                style={{
-                  transform: `translate(${active.crop.x}%, ${active.crop.y}%) scale(${active.crop.zoom})`,
-                  transformOrigin: 'center center',
-                }}
+                style={getCropImageStyle(active.crop)}
               />
             </div>
           ) : (

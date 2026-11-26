@@ -3,6 +3,7 @@ import { ArrowUpRight, BookOpen, Compass, ExternalLink } from 'lucide-react';
 import { CuratedWork, AppView } from '../types';
 import { useArchive } from '../context/ArchiveContext';
 import { formatFullDate, formatYear } from '../utils/dateFormatting';
+import { getCropImageStyle } from '../utils/imageCrop';
 
 interface CuratedEditorialGridProps {
   onNavigate: (view: AppView) => void;
@@ -36,6 +37,7 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
           coverImage: entry.coverImage || '',
           coverImageCaption: entry.coverImageCaption,
           coverImageAlt: entry.coverImageAlt,
+          coverImageCrop: entry.coverImage && entry.coverImageCrop ? entry.coverImageCrop : undefined,
           excerpt: entry.excerpt || entry.summary || '',
           bodyBlocks: entry.blocks as any,
           metadata: entry.metadata,
@@ -68,6 +70,9 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
               coverImage: matchingEntry.coverImage || w.coverImage || '',
               coverImageCaption: matchingEntry.coverImageCaption || w.coverImageCaption,
               coverImageAlt: matchingEntry.coverImageAlt || w.coverImageAlt,
+              coverImageCrop: matchingEntry.coverImage
+                ? (matchingEntry.coverImageCrop || undefined)
+                : w.coverImageCrop,
               excerpt: matchingEntry.excerpt || matchingEntry.summary || w.excerpt || '',
               bodyBlocks: matchingEntry.blocks as any,
               metadata: matchingEntry.metadata || w.metadata,
@@ -119,12 +124,26 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
               {/* Large Image on Left / Top */}
               <div className="lg:col-span-8 group cursor-pointer" onClick={() => onNavigate({ page: 'entry', slug: dominantWork.slug })}>
                 <div className="relative overflow-hidden bg-[#F4F3EE] border border-[#E5E3DB]">
-                  <img
-                    src={dominantWork.coverImage}
-                    alt={dominantWork.coverImageAlt || dominantWork.title}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-auto max-h-[640px] object-cover transition-transform duration-700 group-hover:scale-[1.01]"
-                  />
+                  {dominantWork.coverImageCrop ? (
+                    <div className="w-full aspect-[4/3] max-h-[640px] overflow-hidden">
+                      <div className="w-full h-full transition-transform duration-700 group-hover:scale-[1.01]">
+                        <img
+                          src={dominantWork.coverImage}
+                          alt={dominantWork.coverImageAlt || dominantWork.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                          style={getCropImageStyle(dominantWork.coverImageCrop)}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <img
+                      src={dominantWork.coverImage}
+                      alt={dominantWork.coverImageAlt || dominantWork.title}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-auto max-h-[640px] object-cover transition-transform duration-700 group-hover:scale-[1.01]"
+                    />
+                  )}
                   <div className="absolute top-4 left-4 bg-[#141413]/90 text-[#FBFBFA] px-2.5 py-1 text-[11px] font-mono-archival">
                     {dominantWork.workType} — {dominantWork.year}
                   </div>
@@ -208,12 +227,26 @@ export const CuratedEditorialGrid: React.FC<CuratedEditorialGridProps> = ({ onNa
                   className="cursor-pointer overflow-hidden bg-[#F4F3EE] border border-[#E5E3DB]"
                   onClick={() => onNavigate({ page: 'entry', slug: work.slug })}
                 >
-                  <img
-                    src={work.coverImage}
-                    alt={work.coverImageAlt || work.title}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-64 sm:h-72 object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-                  />
+                  {work.coverImageCrop ? (
+                    <div className="w-full h-64 sm:h-72 overflow-hidden">
+                      <div className="w-full h-full transition-transform duration-500 group-hover:scale-[1.02]">
+                        <img
+                          src={work.coverImage}
+                          alt={work.coverImageAlt || work.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                          style={getCropImageStyle(work.coverImageCrop)}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <img
+                      src={work.coverImage}
+                      alt={work.coverImageAlt || work.title}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-64 sm:h-72 object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                    />
+                  )}
                 </div>
 
                 {/* Content */}

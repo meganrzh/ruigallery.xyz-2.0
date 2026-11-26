@@ -65,6 +65,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     addThread,
     deleteThread,
     resetToDefaultData,
+    refetchAdminArchive,
   } = useArchive();
 
   // Resolve initial tab (aliasing legacy 'work' -> 'homepage', 'new-work' -> 'new-entry')
@@ -88,9 +89,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
   useEffect(() => {
     let isMounted = true;
     api.getSession()
-      .then((session) => {
+      .then(async (session) => {
         if (!isMounted) return;
         if (session && session.authenticated) {
+          await refetchAdminArchive();
+          if (!isMounted) return;
           setAuthState({
             loading: false,
             authenticated: true,
@@ -112,7 +115,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, subT
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [refetchAdminArchive]);
 
   // Unified Entry Authoring & Editing State
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);

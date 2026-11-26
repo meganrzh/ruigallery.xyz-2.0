@@ -6,6 +6,7 @@
 
 import type { R2Bucket } from '@cloudflare/workers-types';
 import { handleAdminMutationRoutes } from './adminRoutes';
+import { buildBidirectionalRelatedEntriesMap } from './utils/crossReferences';
 
 export interface D1Result<T = unknown> {
   success: boolean;
@@ -441,6 +442,28 @@ export async function authenticateAdminRequest(
   }
 }
 
+export interface StoredImageCrop {
+  zoom: number;
+  x: number;
+  y: number;
+}
+
+export function sanitizeCoverImageCrop(raw: unknown): StoredImageCrop | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const candidate = raw as Record<string, unknown>;
+  const zoom = typeof candidate.zoom === 'number' ? candidate.zoom : Number(candidate.zoom);
+  const x = typeof candidate.x === 'number' ? candidate.x : Number(candidate.x);
+  const y = typeof candidate.y === 'number' ? candidate.y : Number(candidate.y);
+  if (!Number.isFinite(zoom) || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+  return {
+    zoom: Number(Math.max(1.0, Math.min(3.0, zoom)).toFixed(2)),
+    x: Math.round(Math.max(-100, Math.min(100, x))),
+    y: Math.round(Math.max(-100, Math.min(100, y))),
+  };
+}
+
 export function hydrateEntry(
   entry: EntryRecord,
   studyCollectionMap: Map<string, string>,
@@ -455,11 +478,27 @@ export function hydrateEntry(
     blocks = [];
   }
 
-  let metadata: Record<string, string> = {};
+  let rawMetadata: Record<string, unknown> = {};
   try {
-    metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : (entry.metadata || {});
+    const parsed = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : (entry.metadata || {});
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      rawMetadata = parsed as Record<string, unknown>;
+    }
   } catch {
-    metadata = {};
+    rawMetadata = {};
+  }
+
+  const coverImageCrop =
+    entry.cover_image && entry.cover_image.trim()
+      ? sanitizeCoverImageCrop(rawMetadata.coverImageCrop) ?? undefined
+      : undefined;
+
+  const metadata: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rawMetadata)) {
+    if (k === 'coverImageCrop') continue;
+    if (typeof v === 'string') {
+      metadata[k] = v;
+    }
   }
 
   const directCollectionId = (entry.collection_id && entry.collection_id.trim()) || undefined;
@@ -488,6 +527,7 @@ export function hydrateEntry(
     coverImage: entry.cover_image || undefined,
     coverImageCaption: entry.cover_image_caption || undefined,
     coverImageAlt: entry.cover_image_alt || undefined,
+    coverImageCrop,
     blocks,
     metadata,
     threadIds: entryThreadsMap.get(entry.id) || [],
@@ -567,6 +607,102 @@ export function normalizeNullableText(
   return trimmed.length > 0 ? trimmed : null;
 }
 
+async function loadHydratedArchive(env: Env, includeNonPublished: boolean) {
+  const [
+    collectionsResult,
+    studiesResult,
+    threadsResult,
+    entriesResult,
+    entryThreadsResult,
+    entryRelatedStudiesResult,
+    entryRelatedEntriesResult,
+    worksResult,
+    workStudiesResult,
+    workEntriesResult,
+  ] = await Promise.all([
+    env.DB.prepare('SELECT * FROM collections ORDER BY order_index ASC, created_at ASC').all<CollectionRecord>(),
+    env.DB.prepare('SELECT * FROM studies ORDER BY order_index ASC, created_at ASC').all<StudyRecord>(),
+    env.DB.prepare('SELECT * FROM threads ORDER BY order_index ASC, created_at ASC').all<ThreadRecord>(),
+    env.DB.prepare('SELECT * FROM entries ORDER BY CAST(entry_number AS INTEGER) DESC, created_at DESC').all<EntryRecord>(),
+    env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
+    env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
+    env.DB.prepare('SELECT entry_id, related_entry_id FROM entry_related_entries').all<EntryRelatedEntryRecord>(),
+    env.DB.prepare('SELECT * FROM curated_works ORDER BY archival_date DESC, created_at DESC').all<CuratedWorkRecord>(),
+    env.DB.prepare('SELECT work_id, study_id FROM curated_work_related_studies').all<CuratedWorkRelatedStudyRecord>(),
+    env.DB.prepare('SELECT work_id, entry_id FROM curated_work_related_entries').all<CuratedWorkRelatedEntryRecord>(),
+  ]);
+
+  const studyCollectionMap = new Map<string, string>();
+  for (const s of studiesResult.results || []) {
+    studyCollectionMap.set(s.id, s.collection_id);
+  }
+
+  const entryThreadsMap = new Map<string, string[]>();
+  for (const et of entryThreadsResult.results || []) {
+    const list = entryThreadsMap.get(et.entry_id) || [];
+    list.push(et.thread_id);
+    entryThreadsMap.set(et.entry_id, list);
+  }
+
+  const entryRelatedStudiesMap = new Map<string, string[]>();
+  for (const ers of entryRelatedStudiesResult.results || []) {
+    const list = entryRelatedStudiesMap.get(ers.entry_id) || [];
+    list.push(ers.study_id);
+    entryRelatedStudiesMap.set(ers.entry_id, list);
+  }
+
+  let rawEntries = entriesResult.results || [];
+  if (!includeNonPublished) {
+    rawEntries = rawEntries.filter((e) => e.visibility === 'published');
+  }
+
+  const allowedEntryIds = new Set(rawEntries.map((e) => e.id));
+  const entryRelatedEntriesMap = buildBidirectionalRelatedEntriesMap(
+    entryRelatedEntriesResult.results || [],
+    allowedEntryIds
+  );
+
+  const hydratedEntries = rawEntries.map((e) =>
+    hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap)
+  );
+
+  const hydratedThreads = (threadsResult.results || []).map((t) => ({
+    id: t.id,
+    slug: t.slug,
+    name: t.name,
+    description: t.description || undefined,
+    order: t.order_index,
+    createdAt: t.created_at,
+    updatedAt: t.updated_at,
+  }));
+
+  const workStudiesMap = new Map<string, string[]>();
+  for (const ws of workStudiesResult.results || []) {
+    const list = workStudiesMap.get(ws.work_id) || [];
+    list.push(ws.study_id);
+    workStudiesMap.set(ws.work_id, list);
+  }
+
+  const workEntriesMap = new Map<string, string[]>();
+  for (const we of workEntriesResult.results || []) {
+    const list = workEntriesMap.get(we.work_id) || [];
+    list.push(we.entry_id);
+    workEntriesMap.set(we.work_id, list);
+  }
+
+  const hydratedWorks = (worksResult.results || []).map((w) =>
+    hydrateCuratedWork(w, workStudiesMap, workEntriesMap)
+  );
+
+  return {
+    collections: collectionsResult.results || [],
+    studies: studiesResult.results || [],
+    threads: hydratedThreads,
+    entries: hydratedEntries,
+    curatedWorks: hydratedWorks,
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -607,6 +743,22 @@ export default {
               sub: auth.user?.sub,
             },
           });
+        }
+
+        // Authenticated Admin archive hydration (complete dataset including draft/hidden entries & relationships)
+        if (pathname === '/api/admin/archive' && method === 'GET') {
+          const archiveData = await loadHydratedArchive(env, true);
+          return jsonResponse(
+            {
+              success: true,
+              data: archiveData,
+            },
+            200,
+            {
+              'Cache-Control': 'private, no-store',
+              Vary: 'Cookie, Cf-Access-Jwt-Assertion',
+            }
+          );
         }
 
         return await handleAdminMutationRoutes(request, env, pathname, method);
@@ -685,103 +837,19 @@ export default {
       // 1. GET /api/archive (Aggregate for initial hydration)
       if (pathname === '/api/archive' && method === 'GET') {
         const auth = await authenticateAdminRequest(request, env);
-        const [
-          collectionsResult,
-          studiesResult,
-          threadsResult,
-          entriesResult,
-          entryThreadsResult,
-          entryRelatedStudiesResult,
-          entryRelatedEntriesResult,
-          worksResult,
-          workStudiesResult,
-          workEntriesResult,
-        ] = await Promise.all([
-          env.DB.prepare('SELECT * FROM collections ORDER BY order_index ASC, created_at ASC').all<CollectionRecord>(),
-          env.DB.prepare('SELECT * FROM studies ORDER BY order_index ASC, created_at ASC').all<StudyRecord>(),
-          env.DB.prepare('SELECT * FROM threads ORDER BY order_index ASC, created_at ASC').all<ThreadRecord>(),
-          env.DB.prepare('SELECT * FROM entries ORDER BY CAST(entry_number AS INTEGER) DESC, created_at DESC').all<EntryRecord>(),
-          env.DB.prepare('SELECT entry_id, thread_id FROM entry_threads').all<EntryThreadRecord>(),
-          env.DB.prepare('SELECT entry_id, study_id FROM entry_related_studies').all<EntryRelatedStudyRecord>(),
-          env.DB.prepare('SELECT entry_id, related_entry_id FROM entry_related_entries').all<EntryRelatedEntryRecord>(),
-          env.DB.prepare('SELECT * FROM curated_works ORDER BY archival_date DESC, created_at DESC').all<CuratedWorkRecord>(),
-          env.DB.prepare('SELECT work_id, study_id FROM curated_work_related_studies').all<CuratedWorkRelatedStudyRecord>(),
-          env.DB.prepare('SELECT work_id, entry_id FROM curated_work_related_entries').all<CuratedWorkRelatedEntryRecord>(),
-        ]);
+        const archiveData = await loadHydratedArchive(env, auth.authenticated);
 
-        const studyCollectionMap = new Map<string, string>();
-        for (const s of studiesResult.results || []) {
-          studyCollectionMap.set(s.id, s.collection_id);
-        }
-
-        const entryThreadsMap = new Map<string, string[]>();
-        for (const et of entryThreadsResult.results || []) {
-          const list = entryThreadsMap.get(et.entry_id) || [];
-          list.push(et.thread_id);
-          entryThreadsMap.set(et.entry_id, list);
-        }
-
-        const entryRelatedStudiesMap = new Map<string, string[]>();
-        for (const ers of entryRelatedStudiesResult.results || []) {
-          const list = entryRelatedStudiesMap.get(ers.entry_id) || [];
-          list.push(ers.study_id);
-          entryRelatedStudiesMap.set(ers.entry_id, list);
-        }
-
-        const entryRelatedEntriesMap = new Map<string, string[]>();
-        for (const ere of entryRelatedEntriesResult.results || []) {
-          const list = entryRelatedEntriesMap.get(ere.entry_id) || [];
-          list.push(ere.related_entry_id);
-          entryRelatedEntriesMap.set(ere.entry_id, list);
-        }
-
-        let rawEntries = entriesResult.results || [];
-        if (!auth.authenticated) {
-          rawEntries = rawEntries.filter((e) => e.visibility === 'published');
-        }
-
-        const hydratedEntries = rawEntries.map((e) =>
-          hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap)
-        );
-
-        const hydratedThreads = (threadsResult.results || []).map((t) => ({
-          id: t.id,
-          slug: t.slug,
-          name: t.name,
-          description: t.description || undefined,
-          order: t.order_index,
-          createdAt: t.created_at,
-          updatedAt: t.updated_at,
-        }));
-
-        const workStudiesMap = new Map<string, string[]>();
-        for (const ws of workStudiesResult.results || []) {
-          const list = workStudiesMap.get(ws.work_id) || [];
-          list.push(ws.study_id);
-          workStudiesMap.set(ws.work_id, list);
-        }
-
-        const workEntriesMap = new Map<string, string[]>();
-        for (const we of workEntriesResult.results || []) {
-          const list = workEntriesMap.get(we.work_id) || [];
-          list.push(we.entry_id);
-          workEntriesMap.set(we.work_id, list);
-        }
-
-        const hydratedWorks = (worksResult.results || []).map((w) =>
-          hydrateCuratedWork(w, workStudiesMap, workEntriesMap)
-        );
-
-        return jsonResponse({
-          success: true,
-          data: {
-            collections: collectionsResult.results || [],
-            studies: studiesResult.results || [],
-            threads: hydratedThreads,
-            entries: hydratedEntries,
-            curatedWorks: hydratedWorks,
+        return jsonResponse(
+          {
+            success: true,
+            data: archiveData,
           },
-        });
+          200,
+          {
+            'Cache-Control': auth.authenticated ? 'private, no-store' : 'no-cache',
+            Vary: 'Cookie, Cf-Access-Jwt-Assertion',
+          }
+        );
       }
 
       // 2. GET /api/collections
@@ -930,21 +998,23 @@ export default {
             entryRelatedStudiesMap.set(ers.entry_id, list);
           }
 
-          const entryRelatedEntriesMap = new Map<string, string[]>();
-          for (const ere of entryRelatedEntriesResult.results || []) {
-            const list = entryRelatedEntriesMap.get(ere.entry_id) || [];
-            list.push(ere.related_entry_id);
-            entryRelatedEntriesMap.set(ere.entry_id, list);
-          }
-
           const auth = await authenticateAdminRequest(request, env);
-          let list = (entriesResult.results || []).map((e) =>
+          const allRawEntries = entriesResult.results || [];
+          const visibleRawEntries = auth.authenticated
+            ? allRawEntries
+            : allRawEntries.filter((e) => e.visibility === 'published');
+
+          const allowedEntryIds = new Set(visibleRawEntries.map((e) => e.id));
+          const entryRelatedEntriesMap = buildBidirectionalRelatedEntriesMap(
+            entryRelatedEntriesResult.results || [],
+            allowedEntryIds
+          );
+
+          let list = visibleRawEntries.map((e) =>
             hydrateEntry(e, studyCollectionMap, entryThreadsMap, entryRelatedStudiesMap, entryRelatedEntriesMap)
           );
 
-          if (!auth.authenticated) {
-            list = list.filter((e) => e.visibility === 'published');
-          } else if (visibilityFilter) {
+          if (auth.authenticated && visibilityFilter) {
             list = list.filter((e) => e.visibility === visibilityFilter);
           }
 
@@ -981,11 +1051,9 @@ export default {
             return errorResponse('Entry not found', 404);
           }
 
-          if (entry.visibility !== 'published') {
-            const auth = await authenticateAdminRequest(request, env);
-            if (!auth.authenticated) {
-              return errorResponse('Entry not found', 404);
-            }
+          const auth = await authenticateAdminRequest(request, env);
+          if (entry.visibility !== 'published' && !auth.authenticated) {
+            return errorResponse('Entry not found', 404);
           }
 
           const [study, entryThreads, entryRelatedStudies, entryRelatedEntries] = await Promise.all([
@@ -1000,10 +1068,28 @@ export default {
             env.DB.prepare('SELECT study_id FROM entry_related_studies WHERE entry_id = ?')
               .bind(entry.id)
               .all<{ study_id: string }>(),
-            env.DB.prepare('SELECT related_entry_id FROM entry_related_entries WHERE entry_id = ?')
-              .bind(entry.id)
-              .all<{ related_entry_id: string }>(),
+            env.DB.prepare(
+              'SELECT entry_id, related_entry_id FROM entry_related_entries WHERE entry_id = ? OR related_entry_id = ?'
+            )
+              .bind(entry.id, entry.id)
+              .all<EntryRelatedEntryRecord>(),
           ]);
+
+          const rawBidirectionalMap = buildBidirectionalRelatedEntriesMap(entryRelatedEntries.results || []);
+          const candidateRelatedIds = rawBidirectionalMap.get(entry.id) || [];
+          let visibleRelatedIds = candidateRelatedIds;
+
+          if (candidateRelatedIds.length > 0) {
+            const placeholders = candidateRelatedIds.map(() => '?').join(', ');
+            const targetSql = auth.authenticated
+              ? `SELECT id FROM entries WHERE id IN (${placeholders})`
+              : `SELECT id FROM entries WHERE visibility = 'published' AND id IN (${placeholders})`;
+            const targetRows = await env.DB.prepare(targetSql)
+              .bind(...candidateRelatedIds)
+              .all<{ id: string }>();
+            const allowedTargetIds = new Set((targetRows.results || []).map((r) => r.id));
+            visibleRelatedIds = candidateRelatedIds.filter((rid) => allowedTargetIds.has(rid));
+          }
 
           const studyCollectionMap = new Map<string, string>();
           if (entry.study_id && study?.collection_id) {
@@ -1016,7 +1102,7 @@ export default {
             [entry.id, (entryRelatedStudies.results || []).map((r) => r.study_id)],
           ]);
           const entryRelatedEntriesMap = new Map<string, string[]>([
-            [entry.id, (entryRelatedEntries.results || []).map((r) => r.related_entry_id)],
+            [entry.id, visibleRelatedIds],
           ]);
 
           return jsonResponse({

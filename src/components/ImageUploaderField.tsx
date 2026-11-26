@@ -6,8 +6,12 @@ import {
   X,
   AlertCircle,
   Trash2,
+  Crop,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { ImageCrop } from '../types';
+import { formatCropLabel, getCropImageStyle } from '../utils/imageCrop';
+import { ImageCropModal } from './ImageCropModal';
 
 export interface ImageUploaderFieldProps {
   value: string;
@@ -20,6 +24,11 @@ export interface ImageUploaderFieldProps {
   scanInfo?: string;
   onScanInfoChange?: (scanInfo: string) => void;
   placeholder?: string;
+  enableCrop?: boolean;
+  crop?: ImageCrop;
+  onCropChange?: (crop: ImageCrop | undefined) => void;
+  cropModalTitle?: string;
+  cropModalSubtitle?: string;
 }
 
 export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
@@ -32,6 +41,11 @@ export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
   scanInfo,
   onScanInfoChange,
   placeholder = 'https://... or upload an archival image file',
+  enableCrop = false,
+  crop,
+  onCropChange,
+  cropModalTitle = 'Edit Cover Image Crop',
+  cropModalSubtitle = 'Featured cover framing only • Original R2 photograph remains unedited',
 }) => {
   const [mode, setMode] = useState<'upload' | 'url'>(() => {
     if (value && !value.startsWith('/api/media/')) return 'url';
@@ -40,6 +54,7 @@ export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleUploadFile = async (file: File) => {
@@ -64,6 +79,7 @@ export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
     setIsUploading(true);
     try {
       const res = await api.uploadMedia(file);
+      onCropChange?.(undefined);
       onChange(res.url);
       setUploadError(null);
     } catch (err: unknown) {
@@ -229,18 +245,19 @@ export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
         <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-3 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center space-x-3 min-w-0">
-              <div className="w-20 h-20 bg-[#EAE8E0] border border-[#E5E3DB] overflow-hidden shrink-0 flex items-center justify-center">
+              <div className="w-20 h-20 bg-[#EAE8E0] border border-[#E5E3DB] overflow-hidden shrink-0 flex items-center justify-center relative">
                 <img
                   src={value}
                   alt="Thumbnail preview"
                   className="w-full h-full object-cover"
+                  style={enableCrop && crop ? getCropImageStyle(crop) : undefined}
                   onError={(e) => {
                     (e.target as HTMLElement).style.display = 'none';
                   }}
                 />
               </div>
               <div className="min-w-0 space-y-1">
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span
                     className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wider uppercase ${
                       isR2Media
@@ -250,6 +267,11 @@ export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
                   >
                     {isR2Media ? 'R2 Archival Storage' : 'External URL'}
                   </span>
+                  {enableCrop && crop && (
+                    <span className="bg-[#9E2A2B]/10 text-[#9E2A2B] text-[9px] px-1.5 py-0.5 border border-[#9E2A2B]/30 font-semibold tracking-wider uppercase">
+                      {formatCropLabel(crop)}
+                    </span>
+                  )}
                 </div>
                 <div
                   className="text-[11px] text-[#141413] font-mono-archival break-all line-clamp-2"
@@ -260,7 +282,32 @@ export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+            <div className="flex flex-wrap items-center gap-2 shrink-0 self-end sm:self-center">
+              {enableCrop && onCropChange && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsCropModalOpen(true)}
+                    disabled={isUploading}
+                    className="px-2.5 py-1 text-[11px] border border-[#E5E3DB] bg-[#FBFBFA] hover:border-[#141413] text-[#141413] transition-colors flex items-center space-x-1"
+                    title="Adjust featured cover image crop"
+                  >
+                    <Crop className="w-3 h-3 text-[#9E2A2B]" />
+                    <span>Edit Crop</span>
+                  </button>
+                  {crop && (
+                    <button
+                      type="button"
+                      onClick={() => onCropChange(undefined)}
+                      disabled={isUploading}
+                      className="px-2 py-1 text-[10px] text-[#6E6E66] hover:text-red-700 underline transition-colors"
+                      title="Reset cover crop to original framing"
+                    >
+                      Reset Crop
+                    </button>
+                  )}
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -274,6 +321,7 @@ export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  onCropChange?.(undefined);
                   onChange('');
                   setUploadError(null);
                 }}
@@ -286,6 +334,23 @@ export const ImageUploaderField: React.FC<ImageUploaderFieldProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Optional Crop Modal */}
+      {enableCrop && onCropChange && isCropModalOpen && value && (
+        <ImageCropModal
+          imageUrl={value}
+          initialCrop={crop}
+          title={cropModalTitle}
+          subtitle={cropModalSubtitle}
+          resetLabel="Reset to Original"
+          uncroppedHint="Original default presentation (uncropped)"
+          onSave={(nextCrop) => {
+            onCropChange(nextCrop);
+            setIsCropModalOpen(false);
+          }}
+          onCancel={() => setIsCropModalOpen(false)}
+        />
       )}
 
       {/* Metadata Fields */}

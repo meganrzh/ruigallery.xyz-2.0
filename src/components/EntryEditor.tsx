@@ -33,12 +33,14 @@ import {
   Study,
   Collection,
   Thread,
+  ImageCrop,
   RuiRevision,
   INITIAL_ENTRY_MEDIUMS,
 } from '../types';
 import { EntryReaderPreview } from './EntryReaderPreview';
 import { FormattedTextarea } from '../utils/textFormatting';
 import { formatFullDate } from '../utils/dateFormatting';
+import { normalizeRelatedEntryIds } from '../utils/crossReferences';
 import { api } from '../services/api';
 import { ImageUploaderField } from './ImageUploaderField';
 import { GalleryBlockEditor } from './GalleryBlockEditor';
@@ -141,6 +143,19 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
   const [coverImage, setCoverImage] = useState(initialEntry?.coverImage || '');
   const [coverImageCaption, setCoverImageCaption] = useState(initialEntry?.coverImageCaption || '');
   const [coverImageAlt, setCoverImageAlt] = useState(initialEntry?.coverImageAlt || '');
+  const [coverImageCrop, setCoverImageCrop] = useState<ImageCrop | undefined>(() =>
+    initialEntry?.coverImage && initialEntry?.coverImageCrop
+      ? { ...initialEntry.coverImageCrop }
+      : undefined
+  );
+
+  // Reset previous crop whenever the cover image is replaced or cleared
+  const handleCoverImageChange = (nextUrl: string) => {
+    if (nextUrl.trim() !== coverImage.trim()) {
+      setCoverImageCrop(undefined);
+    }
+    setCoverImage(nextUrl);
+  };
 
   // Metadata
   const [readingTime, setReadingTime] = useState(initialEntry?.metadata?.readingTime || '');
@@ -150,7 +165,9 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
   // Relationships
   const [threadIds, setThreadIds] = useState<string[]>(initialEntry?.threadIds || []);
   const [relatedStudyIds, setRelatedStudyIds] = useState<string[]>(initialEntry?.relatedStudyIds || []);
-  const [relatedEntryIds, setRelatedEntryIds] = useState<string[]>(initialEntry?.relatedEntryIds || []);
+  const [relatedEntryIds, setRelatedEntryIds] = useState<string[]>(() =>
+    normalizeRelatedEntryIds(initialEntry?.relatedEntryIds, initialEntry?.id)
+  );
 
   // Blocks
   const [blocks, setBlocks] = useState<EntryBlock[]>(() => {
@@ -267,7 +284,7 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
       location: location.trim() || undefined,
       threadIds,
       relatedStudyIds,
-      relatedEntryIds,
+      relatedEntryIds: normalizeRelatedEntryIds(relatedEntryIds, initialEntry?.id),
       summary: summary.trim() || undefined,
       excerpt: summary.trim() || undefined,
       blocks,
@@ -277,6 +294,7 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
       coverImage: coverImage.trim() || undefined,
       coverImageCaption: coverImageCaption.trim() || undefined,
       coverImageAlt: coverImageAlt.trim() || undefined,
+      coverImageCrop: coverImage.trim() ? (coverImageCrop ?? null) : null,
       metadata: {
         ...(readingTime ? { readingTime } : {}),
         ...(dimensions ? { dimensions } : {}),
@@ -883,11 +901,16 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
               </div>
               <ImageUploaderField
                 value={coverImage}
-                onChange={setCoverImage}
+                onChange={handleCoverImageChange}
                 caption={coverImageCaption}
                 onCaptionChange={setCoverImageCaption}
                 alt={coverImageAlt}
                 onAltChange={setCoverImageAlt}
+                enableCrop
+                crop={coverImageCrop}
+                onCropChange={setCoverImageCrop}
+                cropModalTitle="Edit Featured Cover Image Crop"
+                cropModalSubtitle="Featured cover framing only • Original R2 image & body images remain unedited"
                 placeholder="https://... or upload an archival cover image"
               />
             </div>
@@ -1258,7 +1281,9 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
                             if (checked) {
                               setRelatedEntryIds(relatedEntryIds.filter((id) => id !== e.id));
                             } else {
-                              setRelatedEntryIds([...relatedEntryIds, e.id]);
+                              setRelatedEntryIds(
+                                normalizeRelatedEntryIds([...relatedEntryIds, e.id], initialEntry?.id)
+                              );
                             }
                           }}
                         />
@@ -1397,6 +1422,7 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
             coverImage,
             coverImageCaption,
             coverImageAlt,
+            coverImageCrop: coverImage.trim() ? coverImageCrop : undefined,
             metadata: {
               ...(readingTime ? { readingTime } : {}),
               ...(dimensions ? { dimensions } : {}),
@@ -1408,7 +1434,9 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
           study={studies.find((s) => s.id === studyId)}
           threads={threads.filter((t) => threadIds.includes(t.id))}
           relatedStudies={studies.filter((s) => relatedStudyIds.includes(s.id))}
-          relatedEntries={entries.filter((e) => relatedEntryIds.includes(e.id))}
+          relatedEntries={entries.filter(
+            (e) => e.id !== initialEntry?.id && relatedEntryIds.includes(e.id) && e.visibility === 'published'
+          )}
           onClose={() => setShowReaderPreview(false)}
         />
       )}

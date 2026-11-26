@@ -5,6 +5,7 @@ import { EntryBodyRenderer } from './EntryBodyRenderer';
 import { EntryMetadataHeader } from './EntryMetadataHeader';
 import { formatFullDate } from '../utils/dateFormatting';
 import { isImageLedMedium } from '../utils/mediumHelpers';
+import { getCropImageStyle } from '../utils/imageCrop';
 
 interface EntryReaderPreviewProps {
   entry: Partial<Entry> & {
@@ -53,6 +54,7 @@ export const EntryReaderPreview: React.FC<EntryReaderPreviewProps> = ({
     coverImage: entry.coverImage,
     coverImageCaption: entry.coverImageCaption,
     coverImageAlt: entry.coverImageAlt,
+    coverImageCrop: entry.coverImage && entry.coverImageCrop ? entry.coverImageCrop : undefined,
     metadata: entry.metadata,
   };
 
@@ -116,15 +118,26 @@ export const EntryReaderPreview: React.FC<EntryReaderPreviewProps> = ({
           {fullEntry.coverImage && (
             <figure className="my-6">
               <div className="border border-[#E5E3DB] bg-[#F4F3EE] p-2 flex items-center justify-center">
-                <img
-                  src={fullEntry.coverImage}
-                  alt={fullEntry.coverImageAlt || fullEntry.title}
-                  className={
-                    isImageLedMedium(fullEntry.medium)
-                      ? 'w-auto max-w-full max-h-[780px] object-contain mx-auto'
-                      : 'w-full max-h-[560px] object-cover'
-                  }
-                />
+                {fullEntry.coverImageCrop ? (
+                  <div className="w-full aspect-[4/3] max-h-[560px] overflow-hidden">
+                    <img
+                      src={fullEntry.coverImage}
+                      alt={fullEntry.coverImageAlt || fullEntry.title}
+                      className="w-full h-full object-cover"
+                      style={getCropImageStyle(fullEntry.coverImageCrop)}
+                    />
+                  </div>
+                ) : (
+                  <img
+                    src={fullEntry.coverImage}
+                    alt={fullEntry.coverImageAlt || fullEntry.title}
+                    className={
+                      isImageLedMedium(fullEntry.medium)
+                        ? 'w-auto max-w-full max-h-[780px] object-contain mx-auto'
+                        : 'w-full max-h-[560px] object-cover'
+                    }
+                  />
+                )}
               </div>
               {fullEntry.coverImageCaption && (
                 <figcaption className="text-xs font-mono-archival text-[#8C8C82] mt-2 italic">

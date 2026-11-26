@@ -37,6 +37,8 @@ export interface GalleryImageCrop {
   y: number;    // Vertical offset percentage from center
 }
 
+export type ImageCrop = GalleryImageCrop;
+
 export interface GalleryImage {
   url: string;
   caption?: string;
@@ -95,6 +97,7 @@ export interface Entry {
   coverImage?: string;
   coverImageCaption?: string;
   coverImageAlt?: string;
+  coverImageCrop?: ImageCrop | null;
   blocks: EntryBlock[];
   metadata?: Record<string, string>;
   threadIds: string[];
@@ -161,6 +164,7 @@ export interface CuratedWork {
   coverImage: string;
   coverImageCaption?: string;
   coverImageAlt?: string;
+  coverImageCrop?: ImageCrop;
   excerpt: string;
   bodyBlocks: CuratedWorkBlock[];
   relatedStudyIds?: string[];
